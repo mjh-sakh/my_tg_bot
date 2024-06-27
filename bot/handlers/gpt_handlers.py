@@ -51,8 +51,16 @@ def markdown_to_telegram_html(markdown_text):
     markdown_text = re.sub(r'~~(.*?)~~', r'<s>\1</s>', markdown_text)
     # Convert inline code
     markdown_text = re.sub(r'`([^`\n]+)`', r'<code>\1</code>', markdown_text)
+
     # Convert code blocks
-    markdown_text = re.sub(r'```([\s\S]+?)```', r'<pre>\1</pre>', markdown_text)
+    def code_block_replace(match):
+        code = match.group(2).strip()
+        lang = match.group(1).strip() if match.group(1) else ''
+        if lang:
+            return f'<pre><code class="language-{lang}">{code}</code></pre>'
+        else:
+            return f'<pre><code>{code}</code></pre>'
+    markdown_text = re.sub(r'```(\w*)\n?([\s\S]+?)```', code_block_replace, markdown_text)
     # Convert links
     markdown_text = re.sub(r'\[(.*?)\]\((.*?)\)', r'<a href="\2">\1</a>', markdown_text)
     return markdown_text
