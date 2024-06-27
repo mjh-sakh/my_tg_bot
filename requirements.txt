@@ -1,0 +1,13 @@
+python-telegram-bot
+python-dotenv
+sentry-sdk
+pytest
+replicate
+python-magic
+openai
+requests
+llama-index
+llama-index-llms-openrouter
+pydantic
+redis
+motor

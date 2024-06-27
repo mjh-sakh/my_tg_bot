@@ -1,0 +1,13 @@
+# IDEs
+.idea
+
+# Virtual env
+.venv
+.envrc
+node_modules
+
+# Secrets
+.env
+
+# Temp files
+__pycache__/

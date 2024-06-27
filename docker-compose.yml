@@ -1,0 +1,20 @@
+version: '3.8'
+services:
+  bot:
+    image: tgbot
+    env_file:
+      - .env
+    environment:
+      - MONGO_URI=mongodb://mongo:27017
+  mongo:
+    image: mongo:latest
+    volumes:
+      - mongo-db:/data/db
+      - mongo-config:/data/configdb
+volumes:
+  mongo-db:
+    name: mongo-db
+    external: true
+  mongo-config:
+    name: mongo-config
+    external: true
