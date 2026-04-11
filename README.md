@@ -2,7 +2,7 @@
 Personal Telegram bot that is in a heavy development stage.
 
 Features in place:
-- transcription of voice messages using Replicate API (`nvidia/parakeet-rnnt-1.1b`)
+- transcription of voice messages using Together AI (`nvidia/parakeet-tdt-0.6b-v3`)
 - chatting with LLM model, keeping the context by replying to the bot answers
 
 Secondary features:

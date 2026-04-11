@@ -12,8 +12,7 @@ dependencies = [
   "pydantic",
   "python-telegram-bot",
   "redis",
-  "replicate",
-  "requests",
+  "together",
 ]
 
 [dependency-groups]
