@@ -1,6 +1,7 @@
 import logging
+import os
 from functools import wraps
-from typing import Union, Optional, Callable
+from typing import Optional, Callable
 
 from telegram import Update
 from telegram.ext import CallbackContext, BaseHandler
@@ -12,6 +13,9 @@ from bot.clients import MongoClient
 class Role(StrEnum):
     admin = 'admin'
     user = 'user'
+
+
+ADMIN_ID = int(os.getenv('ADMIN_ID', '0'))
 
 
 def add_authorization(handler: BaseHandler, role: Optional[Role] = None) -> BaseHandler:
@@ -37,7 +41,13 @@ def authorize_func(func: Callable[[Update, CallbackContext], ...], required_role
 
 
 async def find_role(user_id: int) -> Optional[Role]:
-    db = MongoClient().get_db()
-    users = db['users']
-    user = await users.find_one({'id_': user_id})
+    if ADMIN_ID and user_id == ADMIN_ID:
+        return Role.admin
+    try:
+        db = MongoClient().get_db()
+        users = db['users']
+        user = await users.find_one({'id_': user_id})
+    except Exception as e:
+        logging.warning(f'Failed to resolve role from Mongo for user_id={user_id}: {e}')
+        return None
     return Role(user['role']) if user else None

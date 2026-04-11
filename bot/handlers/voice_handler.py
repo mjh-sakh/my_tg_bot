@@ -6,7 +6,7 @@ from telegram import Update
 from telegram.ext import CallbackContext, MessageHandler, filters
 from bot.clients import BaseTranscribeClient
 
-MAX_MESSAGE_LENGTH = os.getenv('MAX_MESSAGE_LENGTH', 4096)
+MAX_MESSAGE_LENGTH = int(os.getenv('MAX_MESSAGE_LENGTH', 4096))
 
 
 async def handle_voice(update: Update, context: CallbackContext, client: BaseTranscribeClient) -> None:
