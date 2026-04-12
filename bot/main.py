@@ -10,14 +10,12 @@ from bot.handlers import (
     Role,
     add_authorization,
     adduser_handler,
-    chat_handler,
     create_voice_handler,
     disablefeature_handler,
     enablefeature_handler,
     features_handler,
-    reply_handler,
     start_handler,
-    track_history_handler,
+    text_chat_handler,
     whoami_handler,
 )
 from bot.clients import AdaptiveTranscribeClient, SQLiteClient
@@ -38,12 +36,9 @@ if __name__ == '__main__':
         application.add_handler(admin_handler)
 
     voice_handler = create_voice_handler(AdaptiveTranscribeClient())
-    add_authorization(voice_handler, feature=Feature.voice)
+    add_authorization(voice_handler)
     application.add_handler(voice_handler)
 
-    # add_authorization(chat_handler, feature=Feature.chat)
-    # application.add_handler(chat_handler)
-    application.add_handler(track_history_handler, group=1)
-    # add_authorization(reply_handler, feature=Feature.chat)
-    # application.add_handler(reply_handler)
+    add_authorization(text_chat_handler, feature=Feature.chat)
+    application.add_handler(text_chat_handler)
     application.run_polling()

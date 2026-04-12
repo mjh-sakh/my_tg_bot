@@ -57,19 +57,12 @@ def authorize_func(
         user_role = await find_role(user_id)
         if not user_role or not has_required_role(user_role, required_role):
             logging.warning(f'Unauthorized access by user_id: {user_id}.')
-            await update.message.reply_text(
-                f'У вас нет доступа к этому боту. Обратитесь к администратору (user id: {user_id}).'
-            )
             return
 
         if required_feature and user_role != Role.admin:
             feature_name = normalize_feature_name(required_feature)
             if not await has_feature(user_id, feature_name):
                 logging.warning(f'Feature {feature_name} is disabled for user_id: {user_id}.')
-                await update.message.reply_text(
-                    f'Функция {feature_name} вам не включена. Обратитесь к администратору '
-                    f'(user id: {user_id}).'
-                )
                 return
         return await func(update, context)
 
