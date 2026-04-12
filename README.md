@@ -36,3 +36,8 @@ mise exec -- direnv exec . uv run python bot/main.py
 ```bash
 mise exec -- direnv exec . uv run pytest
 ```
+
+## Deployment
+
+Deployment instructions for the Netcup VPS are in `docs/deploy.md`.
+A deploy helper is available at `scripts/deploy.sh`.
