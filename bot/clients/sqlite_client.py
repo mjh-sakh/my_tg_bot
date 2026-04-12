@@ -33,6 +33,17 @@ class SQLiteClient:
                 '''
             )
 
+    def upsert_user(self, user_id: int, role: str) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                '''
+                INSERT INTO users (user_id, role)
+                VALUES (?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET role = excluded.role
+                ''',
+                (user_id, role),
+            )
+
     def get_user_role(self, user_id: int) -> str | None:
         with self._connect() as connection:
             row = connection.execute(

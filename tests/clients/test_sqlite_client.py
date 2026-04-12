@@ -30,6 +30,25 @@ def test_get_user_role_returns_none_for_unknown_user(tmp_path):
     assert client.get_user_role(123) is None
 
 
+def test_upsert_user_inserts_new_user_role(tmp_path):
+    client = SQLiteClient(tmp_path / 'bot.sqlite')
+    client.init_db()
+
+    client.upsert_user(123, 'user')
+
+    assert client.get_user_role(123) == 'user'
+
+
+def test_upsert_user_updates_existing_user_role(tmp_path):
+    client = SQLiteClient(tmp_path / 'bot.sqlite')
+    client.init_db()
+
+    client.upsert_user(123, 'user')
+    client.upsert_user(123, 'admin')
+
+    assert client.get_user_role(123) == 'admin'
+
+
 def test_get_user_role_returns_stored_role(tmp_path):
     db_path = tmp_path / 'bot.sqlite'
     client = SQLiteClient(db_path)
