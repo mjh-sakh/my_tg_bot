@@ -103,7 +103,9 @@ async def generate_llm_reply(update: Update, chain: list[HistoryRecord]) -> None
     llm_ = llm()
     messages = build_llm_messages(update.message.text, chain)
     response = await llm_.achat(messages=messages)
-    logging.info(f"LLM use stats: {response.raw['usage']}")
+    usage = extract_usage(response.raw)
+    if usage is not None:
+        logging.info(f'LLM use stats: {usage}')
 
     for i in range(0, len(response.message.content), MAX_MESSAGE_LENGTH):
         reply_text = markdown_to_telegram_html(response.message.content[i:i + MAX_MESSAGE_LENGTH])
@@ -141,6 +143,16 @@ async def handle_text_chat(update: Update, context: CallbackContext) -> None:
         is_llm_chain=True,
     )
     await generate_llm_reply(update, chain)
+
+
+def extract_usage(raw) -> object | None:
+    if raw is None:
+        return None
+    if hasattr(raw, 'usage'):
+        return raw.usage
+    if isinstance(raw, dict):
+        return raw.get('usage')
+    return None
 
 
 text_chat_handler = MessageHandler(

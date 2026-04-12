@@ -163,3 +163,11 @@ def make_update(chat_id: int, message_id: int, text: str, reply_to_message=None)
         reply_text=AsyncMock(return_value=reply_message),
     )
     return SimpleNamespace(message=message)
+
+
+def test_extract_usage_supports_object_and_dict_shapes():
+    object_usage = SimpleNamespace(usage=SimpleNamespace(total_tokens=123))
+
+    assert gpt_handlers.extract_usage(object_usage).total_tokens == 123
+    assert gpt_handlers.extract_usage({'usage': {'total_tokens': 456}}) == {'total_tokens': 456}
+    assert gpt_handlers.extract_usage(None) is None
