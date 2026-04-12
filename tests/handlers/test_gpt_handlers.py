@@ -60,7 +60,11 @@ async def test_handle_text_chat_sends_fresh_prompt_and_records_history(tmp_path,
     assert user_record.is_llm_chain is True
     assert assistant_record is not None
     assert assistant_record.text == 'assistant reply'
-    update.message.reply_text.assert_awaited_once_with('assistant reply', parse_mode='HTML')
+    update.message.reply_text.assert_awaited_once_with(
+        'assistant reply',
+        parse_mode='HTML',
+        reply_to_message_id=11,
+    )
 
 
 @pytest.mark.asyncio

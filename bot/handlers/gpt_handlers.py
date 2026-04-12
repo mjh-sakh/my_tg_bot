@@ -109,7 +109,11 @@ async def generate_llm_reply(update: Update, chain: list[HistoryRecord]) -> None
 
     for i in range(0, len(response.message.content), MAX_MESSAGE_LENGTH):
         reply_text = markdown_to_telegram_html(response.message.content[i:i + MAX_MESSAGE_LENGTH])
-        reply_message = await update.message.reply_text(reply_text, parse_mode='HTML')
+        reply_message = await update.message.reply_text(
+            reply_text,
+            parse_mode='HTML',
+            reply_to_message_id=update.message.message_id,
+        )
         await write_history_record(
             chat_id=reply_message.chat_id,
             message_id=reply_message.message_id,
