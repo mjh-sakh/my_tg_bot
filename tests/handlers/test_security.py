@@ -56,14 +56,74 @@ async def test_authorize_func_allows_env_admin(monkeypatch):
 
     handler = AsyncMock()
     wrapper = security.authorize_func(handler)
-    update = SimpleNamespace(
-        message=SimpleNamespace(
-            from_user=SimpleNamespace(id=722182029),
-            reply_text=AsyncMock(),
-        )
-    )
+    update = make_update(722182029)
 
     await wrapper(update, object())
 
     handler.assert_awaited_once()
     update.message.reply_text.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_authorize_func_allows_user_with_enabled_feature(tmp_path, monkeypatch):
+    monkeypatch.setattr(security, 'ADMIN_ID', 722182029)
+    client = SQLiteClient(tmp_path / 'bot.sqlite')
+    client.init_db()
+    client.upsert_user(123, security.Role.user.value)
+    client.enable_feature(123, security.Feature.voice.value)
+    monkeypatch.setattr(security, 'SQLiteClient', lambda: client)
+
+    handler = AsyncMock()
+    wrapper = security.authorize_func(handler, required_feature=security.Feature.voice)
+    update = make_update(123)
+
+    await wrapper(update, object())
+
+    handler.assert_awaited_once()
+    update.message.reply_text.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_authorize_func_rejects_user_without_enabled_feature(tmp_path, monkeypatch):
+    monkeypatch.setattr(security, 'ADMIN_ID', 722182029)
+    client = SQLiteClient(tmp_path / 'bot.sqlite')
+    client.init_db()
+    client.upsert_user(123, security.Role.user.value)
+    monkeypatch.setattr(security, 'SQLiteClient', lambda: client)
+
+    handler = AsyncMock()
+    wrapper = security.authorize_func(handler, required_feature=security.Feature.voice)
+    update = make_update(123)
+
+    await wrapper(update, object())
+
+    handler.assert_not_awaited()
+    update.message.reply_text.assert_awaited_once()
+    assert 'voice' in update.message.reply_text.await_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_authorize_func_allows_admin_to_bypass_feature_check(monkeypatch):
+    monkeypatch.setattr(security, 'ADMIN_ID', 722182029)
+
+    handler = AsyncMock()
+    wrapper = security.authorize_func(handler, required_feature=security.Feature.voice)
+    update = make_update(722182029)
+
+    await wrapper(update, object())
+
+    handler.assert_awaited_once()
+    update.message.reply_text.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_has_required_role_treats_admin_as_higher_than_user():
+    assert security.has_required_role(security.Role.admin, security.Role.user) is True
+
+
+def make_update(user_id: int):
+    message = SimpleNamespace(
+        from_user=SimpleNamespace(id=user_id),
+        reply_text=AsyncMock(),
+    )
+    return SimpleNamespace(message=message, effective_user=SimpleNamespace(id=user_id))

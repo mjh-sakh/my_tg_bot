@@ -21,6 +21,7 @@ def test_init_db_creates_parent_directory_and_tables(tmp_path):
 
     assert 'users' in tables
     assert 'history' in tables
+    assert 'user_features' in tables
 
 
 def test_get_user_role_returns_none_for_unknown_user(tmp_path):
@@ -62,6 +63,35 @@ def test_get_user_role_returns_stored_role(tmp_path):
         connection.commit()
 
     assert client.get_user_role(123) == 'user'
+
+
+def test_enable_and_has_feature_round_trip(tmp_path):
+    client = SQLiteClient(tmp_path / 'bot.sqlite')
+    client.init_db()
+
+    client.enable_feature(123, 'voice')
+
+    assert client.has_feature(123, 'voice') is True
+    assert client.has_feature(123, 'chat') is False
+
+
+def test_disable_feature_removes_enabled_feature(tmp_path):
+    client = SQLiteClient(tmp_path / 'bot.sqlite')
+    client.init_db()
+    client.enable_feature(123, 'voice')
+
+    client.disable_feature(123, 'voice')
+
+    assert client.has_feature(123, 'voice') is False
+
+
+def test_list_features_returns_sorted_features(tmp_path):
+    client = SQLiteClient(tmp_path / 'bot.sqlite')
+    client.init_db()
+    client.enable_feature(123, 'voice')
+    client.enable_feature(123, 'chat')
+
+    assert client.list_features(123) == ['chat', 'voice']
 
 
 def test_insert_and_get_history_record_round_trip(tmp_path):

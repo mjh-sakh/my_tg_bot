@@ -30,6 +30,12 @@ class SQLiteClient:
                     schema_version INTEGER NOT NULL DEFAULT 1,
                     PRIMARY KEY (chat_id, message_id)
                 );
+
+                CREATE TABLE IF NOT EXISTS user_features (
+                    user_id INTEGER NOT NULL,
+                    feature TEXT NOT NULL,
+                    PRIMARY KEY (user_id, feature)
+                );
                 '''
             )
 
@@ -51,6 +57,44 @@ class SQLiteClient:
                 (user_id,),
             ).fetchone()
         return row['role'] if row else None
+
+    def enable_feature(self, user_id: int, feature: str) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                '''
+                INSERT OR IGNORE INTO user_features (user_id, feature)
+                VALUES (?, ?)
+                ''',
+                (user_id, feature),
+            )
+
+    def disable_feature(self, user_id: int, feature: str) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                'DELETE FROM user_features WHERE user_id = ? AND feature = ?',
+                (user_id, feature),
+            )
+
+    def has_feature(self, user_id: int, feature: str) -> bool:
+        with self._connect() as connection:
+            row = connection.execute(
+                'SELECT 1 FROM user_features WHERE user_id = ? AND feature = ?',
+                (user_id, feature),
+            ).fetchone()
+        return row is not None
+
+    def list_features(self, user_id: int) -> list[str]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                '''
+                SELECT feature
+                FROM user_features
+                WHERE user_id = ?
+                ORDER BY feature
+                ''',
+                (user_id,),
+            ).fetchall()
+        return [row['feature'] for row in rows]
 
     def insert_history_record(self, **record: Any) -> None:
         with self._connect() as connection:
