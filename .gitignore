@@ -12,5 +12,8 @@ node_modules
 # Secrets
 .env
 
+# Local runtime data
+/data/
+
 # Temp files
 __pycache__/

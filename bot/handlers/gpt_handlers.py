@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from telegram import Update
 from telegram.ext import CommandHandler, MessageHandler, CallbackContext, filters
 
-from bot.clients import MongoClient
+from bot.clients import SQLiteClient
 
 MAX_MESSAGE_LENGTH = 4096
 DEFAULT_MODEL = os.getenv('DEFAULT_MODEL', 'meta-llama/llama-3-70b-instruct')
@@ -19,9 +19,11 @@ SYSTEM_PROMPT = Path('bot', 'handlers', 'prompts', 'helpful_assistant_prompt.txt
 
 
 class HistoryRecord(BaseModel):
-    id_: int
+    chat_id: int
+    message_id: int
     text: str
-    reply_id: Optional[int] = None
+    reply_chat_id: Optional[int] = None
+    reply_message_id: Optional[int] = None
     role: MessageRole
     is_llm_chain: bool = False
     schema_version: int = 1
@@ -86,9 +88,11 @@ async def ask_gpt(update: Update, context: CallbackContext):
         reply_text = markdown_to_telegram_html(reply_text)
         reply_message = await update.message.reply_text(reply_text, parse_mode='HTML')
         await write_history_record(
-            id_=reply_message.message_id,
+            chat_id=reply_message.chat_id,
+            message_id=reply_message.message_id,
             text=response.message.content,
-            reply_id=update.message.message_id,
+            reply_chat_id=update.message.chat_id,
+            reply_message_id=update.message.message_id,
             role=MessageRole.ASSISTANT,
             is_llm_chain=True,
         )
@@ -96,31 +100,44 @@ async def ask_gpt(update: Update, context: CallbackContext):
 
 async def write_history_record(**kwargs) -> None:
     record = HistoryRecord(**kwargs)
-    db = MongoClient().get_db()
-    collection = db['history']
-    await collection.insert_one(record.dict())
+    try:
+        SQLiteClient().insert_history_record(**record.model_dump())
+    except Exception as e:
+        logging.warning(
+            'Failed to write history record to SQLite for '
+            f'chat_id={record.chat_id}, message_id={record.message_id}: {e}'
+        )
 
 
-async def get_history_record(message_id: int) -> Optional[HistoryRecord]:
-    db = MongoClient().get_db()
-    collection = db['history']
-    record = await collection.find_one({'id_': message_id})
+async def get_history_record(chat_id: int, message_id: int) -> Optional[HistoryRecord]:
+    try:
+        record = SQLiteClient().get_history_record(chat_id, message_id)
+    except Exception as e:
+        logging.warning(
+            'Failed to read history record from SQLite for '
+            f'chat_id={chat_id}, message_id={message_id}: {e}'
+        )
+        return None
     return HistoryRecord(**record) if record else None
 
 
 async def record_history(update: Update, context: CallbackContext):
     message = update.message
     if reply_message := message.reply_to_message:
-        reply_id = reply_message.message_id
-        history_record = await get_history_record(reply_id)
+        reply_chat_id = reply_message.chat_id
+        reply_message_id = reply_message.message_id
+        history_record = await get_history_record(reply_chat_id, reply_message_id)
         is_llm_chain = history_record.is_llm_chain if history_record else False
     else:
-        reply_id = None
+        reply_chat_id = None
+        reply_message_id = None
         is_llm_chain = False
     await write_history_record(
-        id_=message.message_id,
+        chat_id=message.chat_id,
+        message_id=message.message_id,
         text=message.text,
-        reply_id=reply_id,
+        reply_chat_id=reply_chat_id,
+        reply_message_id=reply_message_id,
         role=MessageRole.USER,
         is_llm_chain=is_llm_chain,
     )
@@ -128,12 +145,17 @@ async def record_history(update: Update, context: CallbackContext):
 
 async def direct_reply(update: Update, context: CallbackContext):
     reply_message = update.message.reply_to_message
-    history_record = await get_history_record(reply_message.message_id)
+    history_record = await get_history_record(reply_message.chat_id, reply_message.message_id)
     if history_record and history_record.is_llm_chain:
         chain = []
         while history_record:
             chain.append(history_record)
-            history_record = await get_history_record(history_record.reply_id)
+            if history_record.reply_chat_id is None or history_record.reply_message_id is None:
+                break
+            history_record = await get_history_record(
+                history_record.reply_chat_id,
+                history_record.reply_message_id,
+            )
         chain.reverse()
         context.chain = chain
         logging.info(f'{len(chain)} messages were added into the context')

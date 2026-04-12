@@ -8,6 +8,10 @@ Features in place:
 Secondary features:
 - user authorization
 
+Persistence:
+- local SQLite database at `data/bot.sqlite`
+- in production, `/opt/my_tg_bot/data` is bind-mounted to `/app/data`
+
 ## Tooling
 
 This project now uses:

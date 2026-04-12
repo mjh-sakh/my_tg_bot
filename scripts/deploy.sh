@@ -15,8 +15,9 @@ rsync -av \
   --exclude '__pycache__' \
   --exclude '.env' \
   --exclude '.pi-runtime' \
+  --exclude 'data' \
   ./ "${REMOTE_HOST}:${REMOTE_DIR}/"
 
 rsync -av .env "${REMOTE_HOST}:${REMOTE_DIR}/.env"
 
-ssh "${REMOTE_HOST}" "chmod 600 '${REMOTE_DIR}/.env' && chown root:root '${REMOTE_DIR}/.env' && cd '${REMOTE_DIR}' && docker compose up -d --build"
+ssh "${REMOTE_HOST}" "mkdir -p '${REMOTE_DIR}/data' && chmod 700 '${REMOTE_DIR}/data' && chmod 600 '${REMOTE_DIR}/.env' && chown root:root '${REMOTE_DIR}/.env' && cd '${REMOTE_DIR}' && docker compose up -d --build --remove-orphans"

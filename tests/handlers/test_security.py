@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from bot.clients.sqlite_client import SQLiteClient
 from bot.handlers import security
 
 
@@ -16,22 +17,33 @@ async def test_find_role_returns_admin_for_env_admin(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_find_role_handles_mongo_errors(monkeypatch):
+async def test_find_role_returns_sqlite_role_for_known_user(tmp_path, monkeypatch):
+    monkeypatch.setattr(security, 'ADMIN_ID', 722182029)
+    client = SQLiteClient(tmp_path / 'bot.sqlite')
+    client.init_db()
+    with client._connect() as connection:
+        connection.execute(
+            'INSERT INTO users (user_id, role) VALUES (?, ?)',
+            (123, 'user'),
+        )
+        connection.commit()
+
+    monkeypatch.setattr(security, 'SQLiteClient', lambda: client)
+
+    role = await security.find_role(123)
+
+    assert role == security.Role.user
+
+
+@pytest.mark.asyncio
+async def test_find_role_handles_sqlite_errors(monkeypatch):
     monkeypatch.setattr(security, 'ADMIN_ID', 722182029)
 
-    class BrokenUsers:
-        async def find_one(self, query):
-            raise RuntimeError('mongo down')
+    class BrokenSQLiteClient:
+        def get_user_role(self, user_id):
+            raise RuntimeError('sqlite down')
 
-    class BrokenDb:
-        def __getitem__(self, name):
-            return BrokenUsers()
-
-    class BrokenMongoClient:
-        def get_db(self):
-            return BrokenDb()
-
-    monkeypatch.setattr(security, 'MongoClient', BrokenMongoClient)
+    monkeypatch.setattr(security, 'SQLiteClient', BrokenSQLiteClient)
 
     role = await security.find_role(123)
 

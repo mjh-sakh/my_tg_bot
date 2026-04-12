@@ -7,7 +7,7 @@ from telegram import Update
 from telegram.ext import CallbackContext, BaseHandler
 from enum import StrEnum
 
-from bot.clients import MongoClient
+from bot.clients import SQLiteClient
 
 
 class Role(StrEnum):
@@ -44,10 +44,8 @@ async def find_role(user_id: int) -> Optional[Role]:
     if ADMIN_ID and user_id == ADMIN_ID:
         return Role.admin
     try:
-        db = MongoClient().get_db()
-        users = db['users']
-        user = await users.find_one({'id_': user_id})
+        role = SQLiteClient().get_user_role(user_id)
     except Exception as e:
-        logging.warning(f'Failed to resolve role from Mongo for user_id={user_id}: {e}')
+        logging.warning(f'Failed to resolve role from SQLite for user_id={user_id}: {e}')
         return None
-    return Role(user['role']) if user else None
+    return Role(role) if role else None

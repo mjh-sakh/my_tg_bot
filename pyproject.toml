@@ -8,7 +8,6 @@ dependencies = [
   "httpx",
   "llama-index",
   "llama-index-llms-openrouter",
-  "motor",
   "pydantic",
   "python-telegram-bot",
   "redis",

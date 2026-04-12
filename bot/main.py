@@ -6,9 +6,10 @@ from telegram.ext import Application
 logging.basicConfig(level=logging.INFO)
 
 from bot.handlers import start_handler, whoami_handler, create_voice_handler, add_authorization, chat_handler, reply_handler, track_history_handler
-from bot.clients import AdaptiveTranscribeClient
+from bot.clients import AdaptiveTranscribeClient, SQLiteClient
 
 if __name__ == '__main__':
+    SQLiteClient().init_db()
     application = Application.builder().token(os.getenv('TELEGRAM_TOKEN')).build()
     application.add_handler(start_handler)
     application.add_handler(whoami_handler)

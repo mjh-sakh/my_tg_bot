@@ -2,6 +2,13 @@
 
 This project is deployed to the VPS by copying the repo over SSH with `rsync` and running it with Docker Compose.
 
+## Runtime shape
+
+- one Docker Compose service: `bot`
+- persistent SQLite file in the container: `/app/data/bot.sqlite`
+- host data directory bound into the container: `/opt/my_tg_bot/data` → `/app/data`
+- local dev DB path in the repo: `data/bot.sqlite`
+
 ## Prerequisites
 
 On the local machine:
@@ -13,6 +20,7 @@ On the VPS:
 - Docker
 - Docker Compose
 - app directory: `/opt/my_tg_bot`
+- persistent data directory: `/opt/my_tg_bot/data`
 
 ## Production config
 
@@ -27,7 +35,8 @@ Then make sure `/opt/my_tg_bot/.env` contains production values for at least:
 - `OPENROUTER_KEY`
 - `TOGETHER_API_KEY`
 - `ADMIN_ID`
-- `MONGO_URI=mongodb://mongo:27017`
+
+No DB connection env var is needed. The app uses the fixed SQLite path exposed by the bind mount.
 
 ## Upload application files
 
@@ -42,13 +51,17 @@ rsync -av \
   --exclude '.idea' \
   --exclude '__pycache__' \
   --exclude '.env' \
+  --exclude '.pi-runtime' \
+  --exclude 'data' \
   ./ netcup:/opt/my_tg_bot/
 ```
+
+The local `data/` directory is excluded so the server keeps its own persistent SQLite file.
 
 ## Start or update the stack
 
 ```bash
-ssh netcup 'cd /opt/my_tg_bot && docker compose up -d --build'
+ssh netcup "mkdir -p /opt/my_tg_bot/data && cd /opt/my_tg_bot && docker compose up -d --build --remove-orphans"
 ```
 
 Or use the helper script from the repo root:
@@ -62,7 +75,7 @@ Or use the helper script from the repo root:
 ```bash
 ssh netcup 'cd /opt/my_tg_bot && docker compose ps'
 ssh netcup 'cd /opt/my_tg_bot && docker compose logs --tail=100 bot'
-ssh netcup 'cd /opt/my_tg_bot && docker compose logs --tail=100 mongo'
+ssh netcup 'ls -lah /opt/my_tg_bot/data'
 ```
 
 ## Restart
@@ -80,7 +93,9 @@ ssh netcup 'cd /opt/my_tg_bot && docker compose down'
 ## Verify
 
 After startup:
-- check that both `bot` and `mongo` are running
+- check that the `bot` service is running
+- confirm `/opt/my_tg_bot/data/bot.sqlite` exists on the host after the bot starts
 - confirm the bot responds to `/start`
 - confirm the bot responds to `/whoami`
 - if credentials are ready, test one `/chat` request and one voice message
+- restart or recreate the container and confirm `/opt/my_tg_bot/data/bot.sqlite` is still present
