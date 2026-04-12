@@ -1,6 +1,6 @@
 # Deploy to the Netcup VPS
 
-This project is deployed to the VPS by copying the repo over SSH with `rsync` and running it with Docker Compose.
+This project is deployed to the VPS by copying only the files needed for the Docker build over SSH with `rsync` and then running Docker Compose on the host.
 
 ## Runtime shape
 
@@ -27,7 +27,7 @@ On the VPS:
 Start from the current local `.env` and copy it to the server:
 
 ```bash
-rsync -av .env netcup:/opt/my_tg_bot/.env
+rsync -zv .env netcup:/opt/my_tg_bot/.env
 ```
 
 Then make sure `/opt/my_tg_bot/.env` contains production values for at least:
@@ -40,23 +40,28 @@ No DB connection env var is needed. The app uses the fixed SQLite path exposed b
 
 ## Upload application files
 
-From the repository root:
+From the repository root, sync only the files required to build and run the container on the VPS:
 
 ```bash
-rsync -av \
+ssh netcup 'mkdir -p /opt/my_tg_bot/data'
+
+rsync -rlzv \
   --delete \
-  --exclude '.git' \
-  --exclude '.venv' \
-  --exclude '.pytest_cache' \
-  --exclude '.idea' \
-  --exclude '__pycache__' \
-  --exclude '.env' \
-  --exclude '.pi-runtime' \
-  --exclude 'data' \
+  --prune-empty-dirs \
+  --exclude '__pycache__/' \
+  --exclude '*.py[cod]' \
+  --include '/.dockerignore' \
+  --include '/Dockerfile' \
+  --include '/docker-compose.yml' \
+  --include '/pyproject.toml' \
+  --include '/uv.lock' \
+  --include '/bot/' \
+  --include '/bot/***' \
+  --exclude '*' \
   ./ netcup:/opt/my_tg_bot/
 ```
 
-The local `data/` directory is excluded so the server keeps its own persistent SQLite file.
+This keeps deploys fast because it avoids uploading docs, tests, local tooling files, caches, and other files that are irrelevant on the server. The server-side Docker build still benefits from Docker layer caching when `pyproject.toml` and `uv.lock` do not change.
 
 ## Start or update the stack
 
@@ -64,7 +69,7 @@ The local `data/` directory is excluded so the server keeps its own persistent S
 ssh netcup "mkdir -p /opt/my_tg_bot/data && cd /opt/my_tg_bot && docker compose up -d --build --remove-orphans"
 ```
 
-Or use the helper script from the repo root:
+Or use the helper script from the repo root, which performs the focused `rsync` upload and then rebuilds the stack:
 
 ```bash
 ./scripts/deploy.sh

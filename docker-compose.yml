@@ -2,6 +2,7 @@ services:
   bot:
     build:
       context: .
+      target: runtime
     image: my-tg-bot:latest
     restart: unless-stopped
     env_file:

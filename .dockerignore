@@ -1,13 +1,31 @@
-# IDEs
-.idea
-
-# Virtual env
-.venv
+# VCS / tooling
+.git/
+.gitignore
+.idea/
+.pi-runtime/
+.pytest_cache/
 .envrc
-node_modules
 
-# Secrets
-.env
-
-# Temp files
+# Python
+.venv/
 __pycache__/
+*.py[cod]
+*.so
+.mypy_cache/
+.ruff_cache/
+.pytype/
+
+# Local data and tests
+.env
+.env.*
+!.env.example
+data/
+docs/
+scripts/
+tests/
+
+# Other
+node_modules/
+README.md
+AGENTS.md
+agents.md
