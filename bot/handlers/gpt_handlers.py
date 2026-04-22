@@ -13,7 +13,7 @@ from telegram.ext import CallbackContext, MessageHandler, filters
 
 from bot.clients import SQLiteClient
 
-MAX_MESSAGE_LENGTH = 4096
+MAX_MESSAGE_LENGTH = int(os.getenv('MAX_MESSAGE_LENGTH', 4096))
 DEFAULT_MODEL = os.getenv('DEFAULT_MODEL', 'meta-llama/llama-3-70b-instruct')
 SYSTEM_PROMPT = Path('bot', 'handlers', 'prompts', 'helpful_assistant_prompt.txt').read_text()
 
@@ -152,18 +152,36 @@ async def generate_llm_reply(
     if usage is not None:
         logging.info(f'LLM use stats: {usage}')
 
+    reply_messages = []
     for i in range(0, len(response.message.content), MAX_MESSAGE_LENGTH):
         reply_text = markdown_to_telegram_html(response.message.content[i:i + MAX_MESSAGE_LENGTH])
-        reply_message = await message.reply_text(
-            reply_text,
-            parse_mode='HTML',
-            reply_to_message_id=message.message_id,
+        reply_messages.append(
+            await message.reply_text(
+                reply_text,
+                parse_mode='HTML',
+                reply_to_message_id=message.message_id,
+            )
         )
+
+    if not reply_messages:
+        return
+
+    canonical_reply_message = reply_messages[0]
+    await write_history_record(
+        chat_id=canonical_reply_message.chat_id,
+        message_id=canonical_reply_message.message_id,
+        canonical_message_id=canonical_reply_message.message_id,
+        text=response.message.content,
+        reply_chat_id=parent_chat_id,
+        reply_message_id=parent_message_id,
+        role=MessageRole.ASSISTANT,
+    )
+    for reply_message in reply_messages[1:]:
         await write_history_record(
             chat_id=reply_message.chat_id,
             message_id=reply_message.message_id,
-            canonical_message_id=reply_message.message_id,
-            text=response.message.content,
+            canonical_message_id=canonical_reply_message.message_id,
+            text=None,
             reply_chat_id=parent_chat_id,
             reply_message_id=parent_message_id,
             role=MessageRole.ASSISTANT,

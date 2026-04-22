@@ -128,7 +128,7 @@ async def test_handle_text_chat_resolves_reply_to_alias_backed_message(tmp_path,
         chat_id=77,
         message_id=11,
         canonical_message_id=10,
-        text='visible transcript',
+        text=None,
         reply_chat_id=77,
         reply_message_id=10,
         role=MessageRole.USER,
@@ -199,23 +199,39 @@ async def test_get_history_record_returns_none_on_sqlite_error(monkeypatch):
 
 
 class FakeLLM:
-    def __init__(self, content: str):
-        self.achat = AsyncMock(
-            return_value=SimpleNamespace(
-                message=SimpleNamespace(content=content),
-                raw={'usage': {'total_tokens': 1}},
-            )
+    def __init__(self, *contents: str):
+        self.contents = list(contents)
+        self.calls = []
+        self.achat = AsyncMock(side_effect=self._achat)
+
+    async def _achat(self, *, messages):
+        self.calls.append(messages)
+        content = self.contents.pop(0)
+        return SimpleNamespace(
+            message=SimpleNamespace(content=content),
+            raw={'usage': {'total_tokens': 1}},
         )
 
 
 def make_update(chat_id: int, message_id: int, text: str, reply_to_message=None):
-    reply_message = SimpleNamespace(chat_id=chat_id, message_id=message_id + 1)
+    next_reply_message_id = message_id + 1
+
+    async def reply_text(reply_text, **kwargs):
+        nonlocal next_reply_message_id
+        reply_message = SimpleNamespace(
+            chat_id=chat_id,
+            message_id=next_reply_message_id,
+            text=reply_text,
+        )
+        next_reply_message_id += 1
+        return reply_message
+
     message = SimpleNamespace(
         chat_id=chat_id,
         message_id=message_id,
         text=text,
         reply_to_message=reply_to_message,
-        reply_text=AsyncMock(return_value=reply_message),
+        reply_text=AsyncMock(side_effect=reply_text),
     )
     return SimpleNamespace(message=message)
 
@@ -238,6 +254,84 @@ def test_history_record_requires_text_for_canonical_rows():
         role=MessageRole.USER,
     )
     assert alias_record.text is None
+
+
+@pytest.mark.asyncio
+async def test_handle_text_chat_chunks_long_assistant_reply_into_one_canonical_row_plus_aliases(
+    tmp_path,
+    monkeypatch,
+):
+    client = SQLiteClient(tmp_path / 'bot.sqlite')
+    client.init_db()
+    monkeypatch.setattr(gpt_handlers, 'SQLiteClient', lambda: client)
+
+    long_reply = 'a' * 9000
+    fake_llm = FakeLLM(long_reply)
+    monkeypatch.setattr(gpt_handlers, 'llm', lambda: fake_llm)
+
+    update = make_update(chat_id=55, message_id=11, text='hello there')
+
+    await gpt_handlers.handle_text_chat(update, object())
+
+    assert update.message.reply_text.await_count == 3
+    assert [len(call.args[0]) for call in update.message.reply_text.await_args_list] == [4096, 4096, 808]
+
+    canonical_assistant_record = await gpt_handlers.get_history_record(55, 12)
+    assistant_alias_1 = await gpt_handlers.get_history_record(55, 13)
+    assistant_alias_2 = await gpt_handlers.get_history_record(55, 14)
+
+    assert canonical_assistant_record is not None
+    assert canonical_assistant_record.canonical_message_id == 12
+    assert canonical_assistant_record.text == long_reply
+    assert canonical_assistant_record.reply_message_id == 11
+
+    assert assistant_alias_1 is not None
+    assert assistant_alias_1.canonical_message_id == 12
+    assert assistant_alias_1.text is None
+    assert assistant_alias_1.reply_message_id == 11
+
+    assert assistant_alias_2 is not None
+    assert assistant_alias_2.canonical_message_id == 12
+    assert assistant_alias_2.text is None
+    assert assistant_alias_2.reply_message_id == 11
+
+
+@pytest.mark.asyncio
+async def test_handle_text_chat_reply_to_later_assistant_chunk_uses_canonical_assistant_turn(
+    tmp_path,
+    monkeypatch,
+):
+    client = SQLiteClient(tmp_path / 'bot.sqlite')
+    client.init_db()
+    monkeypatch.setattr(gpt_handlers, 'SQLiteClient', lambda: client)
+
+    first_reply = 'b' * 9000
+    second_reply = 'follow-up reply'
+    fake_llm = FakeLLM(first_reply, second_reply)
+    monkeypatch.setattr(gpt_handlers, 'llm', lambda: fake_llm)
+
+    initial_update = make_update(chat_id=55, message_id=11, text='hello there')
+    await gpt_handlers.handle_text_chat(initial_update, object())
+
+    follow_up_update = make_update(
+        chat_id=55,
+        message_id=20,
+        text='what did you mean?',
+        reply_to_message=SimpleNamespace(chat_id=55, message_id=14),
+    )
+    await gpt_handlers.handle_text_chat(follow_up_update, object())
+
+    second_call_messages = fake_llm.calls[1]
+    assert [message.content for message in second_call_messages] == [
+        gpt_handlers.SYSTEM_PROMPT,
+        'hello there',
+        first_reply,
+        'what did you mean?',
+    ]
+
+    follow_up_record = await gpt_handlers.get_history_record(55, 20)
+    assert follow_up_record is not None
+    assert follow_up_record.reply_message_id == 12
 
 
 def test_extract_usage_supports_object_and_dict_shapes():

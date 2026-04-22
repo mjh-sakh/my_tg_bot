@@ -114,7 +114,7 @@ async def test_handle_voice_stores_canonical_and_alias_history_and_generates_ass
 
     assert alias_record is not None
     assert alias_record['canonical_message_id'] == 100
-    assert alias_record['text'] == 'voice transcript'
+    assert alias_record['text'] is None
 
     assert assistant_record is not None
     assert assistant_record['reply_message_id'] == 100
@@ -153,11 +153,11 @@ async def test_handle_voice_stores_all_transcript_chunks_and_reply_to_last_chunk
     ]
     assert [record is not None for record in transcript_chunk_records] == [True, True, True]
     assert [record['canonical_message_id'] for record in transcript_chunk_records] == [100, 100, 100]
-    assert [record['text'] for record in transcript_chunk_records] == [
-        transcript[:4096],
-        transcript[4096:8192],
-        transcript[8192:],
-    ]
+    canonical_record = client.get_history_record(voice_message.chat_id, 100)
+    assert canonical_record is not None
+    assert canonical_record['text'] == transcript
+
+    assert [record['text'] for record in transcript_chunk_records] == [None, None, None]
 
     follow_up_message = SimpleNamespace(
         chat_id=55,
@@ -221,7 +221,7 @@ async def test_reply_to_transcript_alias_continues_same_canonical_chain(tmp_path
         chat_id=55,
         message_id=101,
         canonical_message_id=100,
-        text='voice transcript',
+        text=None,
         reply_chat_id=55,
         reply_message_id=100,
         role='user',

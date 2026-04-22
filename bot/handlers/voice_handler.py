@@ -64,15 +64,16 @@ async def handle_voice(update: Update, context: CallbackContext, client: BaseTra
             text=transcript,
             canonical_message_id=update.message.message_id,
         )
-        await write_history_record(
-            chat_id=transcript_messages[0].chat_id,
-            message_id=transcript_messages[0].message_id,
-            canonical_message_id=update.message.message_id,
-            text=transcript_messages[0].text,
-            reply_chat_id=update.message.chat_id,
-            reply_message_id=update.message.message_id,
-            role='user',
-        )
+        for transcript_message in transcript_messages:
+            await write_history_record(
+                chat_id=transcript_message.chat_id,
+                message_id=transcript_message.message_id,
+                canonical_message_id=update.message.message_id,
+                text=None,
+                reply_chat_id=update.message.chat_id,
+                reply_message_id=update.message.message_id,
+                role='user',
+            )
 
     except Exception as e:
         await update.message.reply_text(f'Ошибочка: {e}', reply_to_message_id=update.message.message_id)
