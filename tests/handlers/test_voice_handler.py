@@ -8,6 +8,19 @@ from bot.handlers import gpt_handlers, voice_handler
 from bot.handlers.security import Feature, Role
 
 
+class DummyReplyMessage:
+    def __init__(self, *, chat_id: int, message_id: int, text: str):
+        self.chat_id = chat_id
+        self.message_id = message_id
+        self.text = text
+        self.edit_text = AsyncMock(side_effect=self._edit_text)
+        self.delete = AsyncMock()
+
+    async def _edit_text(self, text, **kwargs):
+        self.text = text
+        return self
+
+
 class DummyMessage:
     def __init__(
         self,
@@ -30,13 +43,15 @@ class DummyMessage:
         self.reply_to_message = None
         self.reply_text = AsyncMock(side_effect=self._reply_text)
         self._next_reply_message_id = message_id + 1
+        self.sent_replies = []
 
     async def _reply_text(self, text, **kwargs):
-        reply = SimpleNamespace(
+        reply = DummyReplyMessage(
             chat_id=self.chat_id,
             message_id=self._next_reply_message_id,
             text=text,
         )
+        self.sent_replies.append(reply)
         self._next_reply_message_id += 1
         return reply
 
@@ -88,6 +103,7 @@ async def test_handle_voice_stores_canonical_and_alias_history_and_generates_ass
     monkeypatch.setattr(voice_handler, 'find_role', AsyncMock(return_value=Role.user))
     monkeypatch.setattr(voice_handler, 'has_feature', AsyncMock(return_value=True))
     monkeypatch.setattr(gpt_handlers, 'llm', lambda: FakeLLM('assistant reply'))
+    monkeypatch.setattr(gpt_handlers, 'now', Clock([0.0, 2.0, 2.0]))
 
     file_handle = SimpleNamespace(download_to_memory=AsyncMock(side_effect=lambda buffer: buffer.write(b'audio')))
     bot = SimpleNamespace(get_file=AsyncMock(return_value=file_handle))
@@ -102,7 +118,8 @@ async def test_handle_voice_stores_canonical_and_alias_history_and_generates_ass
     transcript_call = message.reply_text.await_args_list[0]
     assistant_call = message.reply_text.await_args_list[1]
     assert transcript_call.args[0] == 'voice transcript'
-    assert assistant_call.args[0] == 'assistant reply'
+    assert assistant_call.args[0] == '...🤔'
+    assert message.sent_replies[1].edit_text.await_args_list[-1].args[0] == 'assistant reply'
 
     canonical_record = client.get_history_record(message.chat_id, 100)
     alias_record = client.get_history_record(message.chat_id, 101)
@@ -135,6 +152,7 @@ async def test_handle_voice_stores_all_transcript_chunks_and_reply_to_last_chunk
 
     fake_llm = FakeLLM('assistant reply')
     monkeypatch.setattr(gpt_handlers, 'llm', lambda: fake_llm)
+    monkeypatch.setattr(gpt_handlers, 'now', Clock([0.0, 2.0, 2.0]))
 
     transcript = 'x' * 9000
     file_handle = SimpleNamespace(download_to_memory=AsyncMock(side_effect=lambda buffer: buffer.write(b'audio')))
@@ -164,13 +182,13 @@ async def test_handle_voice_stores_all_transcript_chunks_and_reply_to_last_chunk
         message_id=200,
         text='follow-up to the last visible transcript chunk',
         reply_to_message=SimpleNamespace(chat_id=55, message_id=103),
-        reply_text=AsyncMock(return_value=SimpleNamespace(chat_id=55, message_id=201, text='assistant reply')),
+        reply_text=AsyncMock(return_value=DummyReplyMessage(chat_id=55, message_id=201, text='...🤔')),
     )
     follow_up_update = SimpleNamespace(message=follow_up_message)
 
     await gpt_handlers.handle_text_chat(follow_up_update, object())
 
-    sent_messages = fake_llm.achat.await_args.kwargs['messages']
+    sent_messages = fake_llm.calls[-1]
     assert [entry.content for entry in sent_messages] == [
         gpt_handlers.SYSTEM_PROMPT,
         transcript,
@@ -201,7 +219,7 @@ async def test_handle_voice_skips_ai_chat_for_forwarded_messages(tmp_path, monke
 
     message.reply_text.assert_awaited_once()
     assert client.get_history_record(message.chat_id, 100) is None
-    assert fake_llm.achat.await_count == 0
+    assert fake_llm.calls == []
 
 
 @pytest.mark.asyncio
@@ -238,6 +256,7 @@ async def test_reply_to_transcript_alias_continues_same_canonical_chain(tmp_path
 
     fake_llm = FakeLLM('voice follow-up reply')
     monkeypatch.setattr(gpt_handlers, 'llm', lambda: fake_llm)
+    monkeypatch.setattr(gpt_handlers, 'now', Clock([0.0, 2.0, 2.0]))
     monkeypatch.setattr(voice_handler, 'find_role', AsyncMock(return_value=Role.user))
     monkeypatch.setattr(voice_handler, 'has_feature', AsyncMock(return_value=True))
 
@@ -254,7 +273,7 @@ async def test_reply_to_transcript_alias_continues_same_canonical_chain(tmp_path
 
     await voice_handler.handle_voice(update, context, transcribe_client)
 
-    sent_messages = fake_llm.achat.await_args.kwargs['messages']
+    sent_messages = fake_llm.calls[0]
     assert [entry.content for entry in sent_messages] == [
         gpt_handlers.SYSTEM_PROMPT,
         'voice transcript',
@@ -266,11 +285,25 @@ async def test_reply_to_transcript_alias_continues_same_canonical_chain(tmp_path
     assert follow_up_record['reply_message_id'] == 100
 
 
+class Clock:
+    def __init__(self, values):
+        self.values = list(values)
+        self.last = values[-1] if values else 0.0
+
+    def __call__(self):
+        if self.values:
+            self.last = self.values.pop(0)
+        return self.last
+
+
 class FakeLLM:
     def __init__(self, content: str):
-        self.achat = AsyncMock(
-            return_value=SimpleNamespace(
-                message=SimpleNamespace(content=content),
-                raw={'usage': {'total_tokens': 1}},
-            )
-        )
+        self.streams = [[content]]
+        self.calls = []
+
+    async def astream_chat(self, *, messages):
+        self.calls.append(messages)
+        stream = self.streams.pop(0)
+        for chunk in stream:
+            yield SimpleNamespace(delta=chunk)
+        yield SimpleNamespace(delta='', raw={'usage': {'total_tokens': 1}})

@@ -30,7 +30,12 @@ async def test_authorized_chat_message_gets_real_openrouter_reply(tmp_path, monk
     monkeypatch.setattr(security, 'SQLiteClient', lambda: client)
     monkeypatch.setattr(security, 'ADMIN_ID', 0)
 
-    bot_reply = SimpleNamespace(chat_id=999, message_id=200)
+    bot_reply = SimpleNamespace(
+        chat_id=999,
+        message_id=200,
+        edit_text=AsyncMock(),
+        delete=AsyncMock(),
+    )
     message = SimpleNamespace(
         chat_id=999,
         message_id=100,
@@ -55,6 +60,7 @@ async def test_authorized_chat_message_gets_real_openrouter_reply(tmp_path, monk
     reply_args = message.reply_text.await_args
     assert reply_args.kwargs['parse_mode'] == 'HTML'
     assert reply_args.args[0].strip()
+    assert bot_reply.edit_text.await_count >= 1
 
     user_record = client.get_history_record(999, 100)
     assistant_record = client.get_history_record(999, 200)
