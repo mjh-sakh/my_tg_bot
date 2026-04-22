@@ -7,7 +7,7 @@ from typing import Any, Optional
 from llama_index.core.base.llms.types import ChatMessage, MessageRole
 from llama_index.llms.openai_like import OpenAILike
 from llama_index.llms.openrouter import OpenRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from telegram import Message, Update
 from telegram.ext import CallbackContext, MessageHandler, filters
 
@@ -22,12 +22,17 @@ class HistoryRecord(BaseModel):
     chat_id: int
     message_id: int
     canonical_message_id: Optional[int] = None
-    text: str
+    text: Optional[str] = None
     reply_chat_id: Optional[int] = None
     reply_message_id: Optional[int] = None
     role: MessageRole
-    is_llm_chain: bool = False
     schema_version: int = 1
+
+    @model_validator(mode='after')
+    def validate_text_for_canonical_rows(self):
+        if self.canonical_message_id in (None, self.message_id) and self.text is None:
+            raise ValueError('Canonical history rows must have text')
+        return self
 
 
 def llm(model: str = DEFAULT_MODEL, **kwargs) -> OpenAILike:
@@ -113,7 +118,7 @@ async def build_chain_from_record(history_record: HistoryRecord) -> list[History
 
 def build_llm_messages(text: str, chain: list[HistoryRecord]) -> list[ChatMessage]:
     messages = [ChatMessage.from_str(content=SYSTEM_PROMPT, role=MessageRole.SYSTEM)]
-    messages.extend(ChatMessage.from_str(content=record.text, role=record.role) for record in chain)
+    messages.extend(ChatMessage.from_str(content=record.text or '', role=record.role) for record in chain)
     messages.append(ChatMessage.from_str(content=text, role=MessageRole.USER))
     return messages
 
@@ -162,7 +167,6 @@ async def generate_llm_reply(
             reply_chat_id=parent_chat_id,
             reply_message_id=parent_message_id,
             role=MessageRole.ASSISTANT,
-            is_llm_chain=True,
         )
 
 
@@ -185,7 +189,6 @@ async def handle_chat_turn(
         reply_chat_id=parent_chat_id,
         reply_message_id=parent_message_id,
         role=MessageRole.USER,
-        is_llm_chain=True,
     )
     await generate_llm_reply(
         message=message,

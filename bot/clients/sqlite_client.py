@@ -22,12 +22,11 @@ class SQLiteClient:
                 CREATE TABLE IF NOT EXISTS history (
                     chat_id INTEGER NOT NULL,
                     message_id INTEGER NOT NULL,
-                    canonical_message_id INTEGER NOT NULL,
-                    text TEXT NOT NULL,
+                    canonical_message_id INTEGER,
+                    text TEXT,
                     reply_chat_id INTEGER,
                     reply_message_id INTEGER,
                     role TEXT NOT NULL,
-                    is_llm_chain INTEGER NOT NULL DEFAULT 0,
                     schema_version INTEGER NOT NULL DEFAULT 1,
                     PRIMARY KEY (chat_id, message_id)
                 );
@@ -116,19 +115,17 @@ class SQLiteClient:
                     reply_chat_id,
                     reply_message_id,
                     role,
-                    is_llm_chain,
                     schema_version
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ''',
                 (
                     record['chat_id'],
                     record['message_id'],
                     record.get('canonical_message_id') or record['message_id'],
-                    record['text'],
+                    record.get('text'),
                     record.get('reply_chat_id'),
                     record.get('reply_message_id'),
                     getattr(record['role'], 'value', record['role']),
-                    int(record.get('is_llm_chain', False)),
                     record.get('schema_version', 1),
                 ),
             )
@@ -145,7 +142,6 @@ class SQLiteClient:
                     reply_chat_id,
                     reply_message_id,
                     role,
-                    is_llm_chain,
                     schema_version
                 FROM history
                 WHERE chat_id = ? AND message_id = ?
@@ -176,7 +172,6 @@ class SQLiteClient:
                     reply_chat_id,
                     reply_message_id,
                     role,
-                    is_llm_chain,
                     schema_version
                 FROM history
                 WHERE chat_id = ? AND message_id = ?
@@ -187,18 +182,73 @@ class SQLiteClient:
 
     def _migrate_history_table(self, connection: sqlite3.Connection) -> None:
         columns = {
-            row['name']
+            row['name']: row
             for row in connection.execute('PRAGMA table_info(history)').fetchall()
         }
-        if 'canonical_message_id' not in columns:
-            connection.execute(
-                'ALTER TABLE history ADD COLUMN canonical_message_id INTEGER'
-            )
+        needs_rebuild = (
+            'canonical_message_id' not in columns
+            or bool(columns['text']['notnull'])
+        )
+        if needs_rebuild:
+            self._rebuild_history_table(connection, columns)
         connection.execute(
             '''
             UPDATE history
             SET canonical_message_id = message_id
             WHERE canonical_message_id IS NULL
+            '''
+        )
+
+    def _rebuild_history_table(
+        self,
+        connection: sqlite3.Connection,
+        columns: dict[str, sqlite3.Row],
+    ) -> None:
+        has_is_llm_chain = 'is_llm_chain' in columns
+        has_canonical_message_id = 'canonical_message_id' in columns
+        optional_column_definition = ',\n                is_llm_chain INTEGER NOT NULL DEFAULT 0' if has_is_llm_chain else ''
+        optional_column_name = ',\n                is_llm_chain' if has_is_llm_chain else ''
+        optional_select_name = ',\n                is_llm_chain' if has_is_llm_chain else ''
+        canonical_select = 'COALESCE(canonical_message_id, message_id)' if has_canonical_message_id else 'message_id'
+        connection.executescript(
+            f'''
+            DROP INDEX IF EXISTS idx_history_chat_canonical_message_id;
+
+            CREATE TABLE history_new (
+                chat_id INTEGER NOT NULL,
+                message_id INTEGER NOT NULL,
+                canonical_message_id INTEGER,
+                text TEXT,
+                reply_chat_id INTEGER,
+                reply_message_id INTEGER,
+                role TEXT NOT NULL,
+                schema_version INTEGER NOT NULL DEFAULT 1{optional_column_definition},
+                PRIMARY KEY (chat_id, message_id)
+            );
+
+            INSERT INTO history_new (
+                chat_id,
+                message_id,
+                canonical_message_id,
+                text,
+                reply_chat_id,
+                reply_message_id,
+                role,
+                schema_version{optional_column_name}
+            )
+            SELECT
+                chat_id,
+                message_id,
+                {canonical_select},
+                text,
+                reply_chat_id,
+                reply_message_id,
+                role,
+                schema_version{optional_select_name}
+            FROM history;
+
+            DROP TABLE history;
+            ALTER TABLE history_new RENAME TO history;
             '''
         )
 

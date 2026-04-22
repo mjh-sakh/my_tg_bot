@@ -24,6 +24,19 @@ def test_init_db_creates_parent_directory_and_tables(tmp_path):
     assert 'user_features' in tables
 
 
+def test_init_db_does_not_create_is_llm_chain_column_on_fresh_db(tmp_path):
+    client = SQLiteClient(tmp_path / 'bot.sqlite')
+    client.init_db()
+
+    with sqlite3.connect(client.db_path) as connection:
+        columns = {
+            row[1]
+            for row in connection.execute('PRAGMA table_info(history)').fetchall()
+        }
+
+    assert 'is_llm_chain' not in columns
+
+
 def test_init_db_adds_canonical_history_index(tmp_path):
     client = SQLiteClient(tmp_path / 'bot.sqlite')
     client.init_db()
@@ -118,23 +131,20 @@ def test_insert_and_get_history_record_round_trip(tmp_path):
         reply_chat_id=55,
         reply_message_id=88,
         role='user',
-        is_llm_chain=True,
         schema_version=1,
     )
 
     record = client.get_history_record(55, 89)
 
-    assert record == {
-        'chat_id': 55,
-        'message_id': 89,
-        'canonical_message_id': 89,
-        'text': 'hello',
-        'reply_chat_id': 55,
-        'reply_message_id': 88,
-        'role': 'user',
-        'is_llm_chain': 1,
-        'schema_version': 1,
-    }
+    assert record is not None
+    assert record['chat_id'] == 55
+    assert record['message_id'] == 89
+    assert record['canonical_message_id'] == 89
+    assert record['text'] == 'hello'
+    assert record['reply_chat_id'] == 55
+    assert record['reply_message_id'] == 88
+    assert record['role'] == 'user'
+    assert record['schema_version'] == 1
 
 
 def test_insert_and_get_alias_history_record_round_trip(tmp_path):
@@ -145,27 +155,24 @@ def test_insert_and_get_alias_history_record_round_trip(tmp_path):
         chat_id=55,
         message_id=90,
         canonical_message_id=89,
-        text='transcript alias',
+        text=None,
         reply_chat_id=55,
         reply_message_id=89,
         role='user',
-        is_llm_chain=False,
         schema_version=1,
     )
 
     record = client.get_history_record(55, 90)
 
-    assert record == {
-        'chat_id': 55,
-        'message_id': 90,
-        'canonical_message_id': 89,
-        'text': 'transcript alias',
-        'reply_chat_id': 55,
-        'reply_message_id': 89,
-        'role': 'user',
-        'is_llm_chain': 0,
-        'schema_version': 1,
-    }
+    assert record is not None
+    assert record['chat_id'] == 55
+    assert record['message_id'] == 90
+    assert record['canonical_message_id'] == 89
+    assert record['text'] is None
+    assert record['reply_chat_id'] == 55
+    assert record['reply_message_id'] == 89
+    assert record['role'] == 'user'
+    assert record['schema_version'] == 1
 
 
 def test_get_canonical_history_record_resolves_alias_to_canonical_row(tmp_path):
@@ -176,7 +183,6 @@ def test_get_canonical_history_record_resolves_alias_to_canonical_row(tmp_path):
         message_id=89,
         text='canonical voice transcript',
         role='user',
-        is_llm_chain=True,
     )
     client.insert_history_record(
         chat_id=55,
@@ -184,22 +190,19 @@ def test_get_canonical_history_record_resolves_alias_to_canonical_row(tmp_path):
         canonical_message_id=89,
         text='visible transcript alias',
         role='user',
-        is_llm_chain=False,
     )
 
     record = client.get_canonical_history_record(55, 90)
 
-    assert record == {
-        'chat_id': 55,
-        'message_id': 89,
-        'canonical_message_id': 89,
-        'text': 'canonical voice transcript',
-        'reply_chat_id': None,
-        'reply_message_id': None,
-        'role': 'user',
-        'is_llm_chain': 1,
-        'schema_version': 1,
-    }
+    assert record is not None
+    assert record['chat_id'] == 55
+    assert record['message_id'] == 89
+    assert record['canonical_message_id'] == 89
+    assert record['text'] == 'canonical voice transcript'
+    assert record['reply_chat_id'] is None
+    assert record['reply_message_id'] is None
+    assert record['role'] == 'user'
+    assert record['schema_version'] == 1
 
 
 def test_init_db_migrates_existing_history_table_and_backfills_canonical_message_id(tmp_path):
@@ -251,3 +254,11 @@ def test_init_db_migrates_existing_history_table_and_backfills_canonical_message
 
     assert 'canonical_message_id' in columns
     assert 'idx_history_chat_canonical_message_id' in indexes
+
+    with sqlite3.connect(db_path) as connection:
+        history_columns = {
+            row[1]: row
+            for row in connection.execute('PRAGMA table_info(history)').fetchall()
+        }
+
+    assert history_columns['text'][3] == 0

@@ -72,7 +72,6 @@ async def handle_voice(update: Update, context: CallbackContext, client: BaseTra
             reply_chat_id=update.message.chat_id,
             reply_message_id=update.message.message_id,
             role='user',
-            is_llm_chain=False,
         )
 
     except Exception as e:

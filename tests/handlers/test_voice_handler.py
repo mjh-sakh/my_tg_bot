@@ -111,15 +111,71 @@ async def test_handle_voice_stores_canonical_and_alias_history_and_generates_ass
     assert canonical_record is not None
     assert canonical_record['text'] == 'voice transcript'
     assert canonical_record['canonical_message_id'] == 100
-    assert canonical_record['is_llm_chain'] == 1
 
     assert alias_record is not None
     assert alias_record['canonical_message_id'] == 100
     assert alias_record['text'] == 'voice transcript'
-    assert alias_record['is_llm_chain'] == 0
 
     assert assistant_record is not None
     assert assistant_record['reply_message_id'] == 100
+
+
+@pytest.mark.asyncio
+async def test_handle_voice_stores_all_transcript_chunks_and_reply_to_last_chunk_continues_chain(
+    tmp_path,
+    monkeypatch,
+):
+    client = SQLiteClient(tmp_path / 'bot.sqlite')
+    client.init_db()
+    client.upsert_user(123456, Role.user.value)
+    client.enable_feature(123456, Feature.chat.value)
+    monkeypatch.setattr(gpt_handlers, 'SQLiteClient', lambda: client)
+    monkeypatch.setattr(voice_handler, 'find_role', AsyncMock(return_value=Role.user))
+    monkeypatch.setattr(voice_handler, 'has_feature', AsyncMock(return_value=True))
+
+    fake_llm = FakeLLM('assistant reply')
+    monkeypatch.setattr(gpt_handlers, 'llm', lambda: fake_llm)
+
+    transcript = 'x' * 9000
+    file_handle = SimpleNamespace(download_to_memory=AsyncMock(side_effect=lambda buffer: buffer.write(b'audio')))
+    bot = SimpleNamespace(get_file=AsyncMock(return_value=file_handle))
+    context = SimpleNamespace(bot=bot)
+    transcribe_client = SimpleNamespace(transcribe=AsyncMock(return_value=transcript))
+    voice_message = DummyMessage(voice=SimpleNamespace(file_id='file-1', duration=12), message_id=100)
+    voice_update = SimpleNamespace(message=voice_message, effective_user=voice_message.from_user)
+
+    await voice_handler.handle_voice(voice_update, context, transcribe_client)
+
+    transcript_chunk_records = [
+        client.get_history_record(voice_message.chat_id, 101),
+        client.get_history_record(voice_message.chat_id, 102),
+        client.get_history_record(voice_message.chat_id, 103),
+    ]
+    assert [record is not None for record in transcript_chunk_records] == [True, True, True]
+    assert [record['canonical_message_id'] for record in transcript_chunk_records] == [100, 100, 100]
+    assert [record['text'] for record in transcript_chunk_records] == [
+        transcript[:4096],
+        transcript[4096:8192],
+        transcript[8192:],
+    ]
+
+    follow_up_message = SimpleNamespace(
+        chat_id=55,
+        message_id=200,
+        text='follow-up to the last visible transcript chunk',
+        reply_to_message=SimpleNamespace(chat_id=55, message_id=103),
+        reply_text=AsyncMock(return_value=SimpleNamespace(chat_id=55, message_id=201, text='assistant reply')),
+    )
+    follow_up_update = SimpleNamespace(message=follow_up_message)
+
+    await gpt_handlers.handle_text_chat(follow_up_update, object())
+
+    sent_messages = fake_llm.achat.await_args.kwargs['messages']
+    assert [entry.content for entry in sent_messages] == [
+        gpt_handlers.SYSTEM_PROMPT,
+        transcript,
+        'follow-up to the last visible transcript chunk',
+    ]
 
 
 @pytest.mark.asyncio
@@ -160,7 +216,6 @@ async def test_reply_to_transcript_alias_continues_same_canonical_chain(tmp_path
         canonical_message_id=100,
         text='voice transcript',
         role='user',
-        is_llm_chain=True,
     )
     await gpt_handlers.write_history_record(
         chat_id=55,
@@ -170,7 +225,6 @@ async def test_reply_to_transcript_alias_continues_same_canonical_chain(tmp_path
         reply_chat_id=55,
         reply_message_id=100,
         role='user',
-        is_llm_chain=False,
     )
     await gpt_handlers.write_history_record(
         chat_id=55,
@@ -180,7 +234,6 @@ async def test_reply_to_transcript_alias_continues_same_canonical_chain(tmp_path
         reply_chat_id=55,
         reply_message_id=100,
         role='assistant',
-        is_llm_chain=True,
     )
 
     fake_llm = FakeLLM('voice follow-up reply')

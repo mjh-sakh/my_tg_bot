@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from llama_index.core.base.llms.types import MessageRole
+from pydantic import ValidationError
 
 from bot.clients.sqlite_client import SQLiteClient
 from bot.handlers import gpt_handlers
@@ -57,7 +58,6 @@ async def test_handle_text_chat_sends_fresh_prompt_and_records_history(tmp_path,
     assistant_record = await gpt_handlers.get_history_record(55, 12)
     assert user_record is not None
     assert user_record.text == 'hello there'
-    assert user_record.is_llm_chain is True
     assert user_record.canonical_message_id == 11
     assert assistant_record is not None
     assert assistant_record.text == 'assistant reply'
@@ -80,7 +80,6 @@ async def test_handle_text_chat_rebuilds_reply_chain_from_stored_history(tmp_pat
         message_id=1,
         text='first user message',
         role=MessageRole.USER,
-        is_llm_chain=True,
     )
     await gpt_handlers.write_history_record(
         chat_id=77,
@@ -89,7 +88,6 @@ async def test_handle_text_chat_rebuilds_reply_chain_from_stored_history(tmp_pat
         reply_chat_id=77,
         reply_message_id=1,
         role=MessageRole.USER,
-        is_llm_chain=True,
     )
 
     fake_llm = FakeLLM('assistant reply')
@@ -125,7 +123,6 @@ async def test_handle_text_chat_resolves_reply_to_alias_backed_message(tmp_path,
         canonical_message_id=10,
         text='voice transcript',
         role=MessageRole.USER,
-        is_llm_chain=True,
     )
     await gpt_handlers.write_history_record(
         chat_id=77,
@@ -135,7 +132,6 @@ async def test_handle_text_chat_resolves_reply_to_alias_backed_message(tmp_path,
         reply_chat_id=77,
         reply_message_id=10,
         role=MessageRole.USER,
-        is_llm_chain=False,
     )
 
     fake_llm = FakeLLM('assistant reply')
@@ -222,6 +218,26 @@ def make_update(chat_id: int, message_id: int, text: str, reply_to_message=None)
         reply_text=AsyncMock(return_value=reply_message),
     )
     return SimpleNamespace(message=message)
+
+
+def test_history_record_requires_text_for_canonical_rows():
+    with pytest.raises(ValidationError):
+        gpt_handlers.HistoryRecord(
+            chat_id=1,
+            message_id=10,
+            canonical_message_id=10,
+            text=None,
+            role=MessageRole.USER,
+        )
+
+    alias_record = gpt_handlers.HistoryRecord(
+        chat_id=1,
+        message_id=11,
+        canonical_message_id=10,
+        text=None,
+        role=MessageRole.USER,
+    )
+    assert alias_record.text is None
 
 
 def test_extract_usage_supports_object_and_dict_shapes():
