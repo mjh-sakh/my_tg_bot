@@ -2,13 +2,13 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from llama_index.core.base.llms.types import ChatMessage, MessageRole
 from llama_index.llms.openai_like import OpenAILike
 from llama_index.llms.openrouter import OpenRouter
 from pydantic import BaseModel
-from telegram import Update
+from telegram import Message, Update
 from telegram.ext import CallbackContext, MessageHandler, filters
 
 from bot.clients import SQLiteClient
@@ -21,6 +21,7 @@ SYSTEM_PROMPT = Path('bot', 'handlers', 'prompts', 'helpful_assistant_prompt.txt
 class HistoryRecord(BaseModel):
     chat_id: int
     message_id: int
+    canonical_message_id: Optional[int] = None
     text: str
     reply_chat_id: Optional[int] = None
     reply_message_id: Optional[int] = None
@@ -80,7 +81,25 @@ async def get_history_record(chat_id: int, message_id: int) -> Optional[HistoryR
     return HistoryRecord(**record) if record else None
 
 
+async def get_canonical_history_record(chat_id: int, message_id: int) -> Optional[HistoryRecord]:
+    try:
+        record = SQLiteClient().get_canonical_history_record(chat_id, message_id)
+    except Exception as e:
+        logging.warning(
+            'Failed to resolve canonical history record from SQLite for '
+            f'chat_id={chat_id}, message_id={message_id}: {e}'
+        )
+        return None
+    return HistoryRecord(**record) if record else None
+
+
 async def build_chain_from_record(history_record: HistoryRecord) -> list[HistoryRecord]:
+    if history_record.canonical_message_id not in (None, history_record.message_id):
+        resolved = await get_canonical_history_record(history_record.chat_id, history_record.message_id)
+        if resolved is None:
+            return []
+        history_record = resolved
+
     chain = []
     current = history_record
     while current:
@@ -99,9 +118,30 @@ def build_llm_messages(text: str, chain: list[HistoryRecord]) -> list[ChatMessag
     return messages
 
 
-async def generate_llm_reply(update: Update, chain: list[HistoryRecord]) -> None:
+async def resolve_reply_chain(message: Message) -> tuple[list[HistoryRecord], Optional[HistoryRecord]]:
+    reply_message = message.reply_to_message
+    if not reply_message:
+        return [], None
+
+    history_record = await get_canonical_history_record(reply_message.chat_id, reply_message.message_id)
+    if not history_record:
+        return [], None
+
+    chain = await build_chain_from_record(history_record)
+    logging.info(f'{len(chain)} messages were added into the context')
+    return chain, history_record
+
+
+async def generate_llm_reply(
+    *,
+    message: Message,
+    text: str,
+    chain: list[HistoryRecord],
+    parent_chat_id: int,
+    parent_message_id: int,
+) -> None:
     llm_ = llm()
-    messages = build_llm_messages(update.message.text, chain)
+    messages = build_llm_messages(text, chain)
     response = await llm_.achat(messages=messages)
     usage = extract_usage(response.raw)
     if usage is not None:
@@ -109,47 +149,59 @@ async def generate_llm_reply(update: Update, chain: list[HistoryRecord]) -> None
 
     for i in range(0, len(response.message.content), MAX_MESSAGE_LENGTH):
         reply_text = markdown_to_telegram_html(response.message.content[i:i + MAX_MESSAGE_LENGTH])
-        reply_message = await update.message.reply_text(
+        reply_message = await message.reply_text(
             reply_text,
             parse_mode='HTML',
-            reply_to_message_id=update.message.message_id,
+            reply_to_message_id=message.message_id,
         )
         await write_history_record(
             chat_id=reply_message.chat_id,
             message_id=reply_message.message_id,
+            canonical_message_id=reply_message.message_id,
             text=response.message.content,
-            reply_chat_id=update.message.chat_id,
-            reply_message_id=update.message.message_id,
+            reply_chat_id=parent_chat_id,
+            reply_message_id=parent_message_id,
             role=MessageRole.ASSISTANT,
             is_llm_chain=True,
         )
 
 
-async def handle_text_chat(update: Update, context: CallbackContext) -> None:
-    del context
-    message = update.message
-    reply_message = message.reply_to_message
-    chain = []
-
-    if reply_message:
-        history_record = await get_history_record(reply_message.chat_id, reply_message.message_id)
-        if history_record:
-            chain = await build_chain_from_record(history_record)
-            logging.info(f'{len(chain)} messages were added into the context')
+async def handle_chat_turn(
+    *,
+    message: Message,
+    text: str,
+    canonical_message_id: Optional[int] = None,
+) -> None:
+    chain, parent_record = await resolve_reply_chain(message)
+    parent_chat_id = parent_record.chat_id if parent_record else None
+    parent_message_id = parent_record.message_id if parent_record else None
+    canonical_message_id = canonical_message_id or message.message_id
 
     await write_history_record(
         chat_id=message.chat_id,
-        message_id=message.message_id,
-        text=message.text,
-        reply_chat_id=reply_message.chat_id if reply_message else None,
-        reply_message_id=reply_message.message_id if reply_message else None,
+        message_id=canonical_message_id,
+        canonical_message_id=canonical_message_id,
+        text=text,
+        reply_chat_id=parent_chat_id,
+        reply_message_id=parent_message_id,
         role=MessageRole.USER,
         is_llm_chain=True,
     )
-    await generate_llm_reply(update, chain)
+    await generate_llm_reply(
+        message=message,
+        text=text,
+        chain=chain,
+        parent_chat_id=message.chat_id,
+        parent_message_id=canonical_message_id,
+    )
 
 
-def extract_usage(raw) -> object | None:
+async def handle_text_chat(update: Update, context: CallbackContext) -> None:
+    del context
+    await handle_chat_turn(message=update.message, text=update.message.text)
+
+
+def extract_usage(raw: Any) -> object | None:
     if raw is None:
         return None
     if hasattr(raw, 'usage'):

@@ -3,7 +3,9 @@ Personal Telegram bot that is in a heavy development stage.
 
 Features in place:
 - transcription of voice messages using Together AI (`nvidia/parakeet-tdt-0.6b-v3`)
-- chatting with LLM model, keeping the context by replying to the bot answers
+- chatting with an LLM in private messages, keeping context by replying to prior bot or user turns
+- direct private voice/audio messages can enter the same AI chat flow as text messages
+- visible transcript messages are stored as Telegram aliases of the canonical voice turn, so replying to either the original voice message or the transcript continues the same conversation
 
 Secondary features:
 - user authorization

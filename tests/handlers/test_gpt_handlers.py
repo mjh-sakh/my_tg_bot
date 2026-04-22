@@ -58,8 +58,10 @@ async def test_handle_text_chat_sends_fresh_prompt_and_records_history(tmp_path,
     assert user_record is not None
     assert user_record.text == 'hello there'
     assert user_record.is_llm_chain is True
+    assert user_record.canonical_message_id == 11
     assert assistant_record is not None
     assert assistant_record.text == 'assistant reply'
+    assert assistant_record.reply_message_id == 11
     update.message.reply_text.assert_awaited_once_with(
         'assistant reply',
         parse_mode='HTML',
@@ -112,6 +114,55 @@ async def test_handle_text_chat_rebuilds_reply_chain_from_stored_history(tmp_pat
 
 
 @pytest.mark.asyncio
+async def test_handle_text_chat_resolves_reply_to_alias_backed_message(tmp_path, monkeypatch):
+    client = SQLiteClient(tmp_path / 'bot.sqlite')
+    client.init_db()
+    monkeypatch.setattr(gpt_handlers, 'SQLiteClient', lambda: client)
+
+    await gpt_handlers.write_history_record(
+        chat_id=77,
+        message_id=10,
+        canonical_message_id=10,
+        text='voice transcript',
+        role=MessageRole.USER,
+        is_llm_chain=True,
+    )
+    await gpt_handlers.write_history_record(
+        chat_id=77,
+        message_id=11,
+        canonical_message_id=10,
+        text='visible transcript',
+        reply_chat_id=77,
+        reply_message_id=10,
+        role=MessageRole.USER,
+        is_llm_chain=False,
+    )
+
+    fake_llm = FakeLLM('assistant reply')
+    monkeypatch.setattr(gpt_handlers, 'llm', lambda: fake_llm)
+
+    update = make_update(
+        chat_id=77,
+        message_id=12,
+        text='reply to transcript alias',
+        reply_to_message=SimpleNamespace(chat_id=77, message_id=11),
+    )
+
+    await gpt_handlers.handle_text_chat(update, object())
+
+    sent_messages = fake_llm.achat.await_args.kwargs['messages']
+    assert [message.content for message in sent_messages] == [
+        gpt_handlers.SYSTEM_PROMPT,
+        'voice transcript',
+        'reply to transcript alias',
+    ]
+
+    user_record = await gpt_handlers.get_history_record(77, 12)
+    assert user_record is not None
+    assert user_record.reply_message_id == 10
+
+
+@pytest.mark.asyncio
 async def test_handle_text_chat_treats_reply_to_unknown_message_as_fresh_prompt(tmp_path, monkeypatch):
     client = SQLiteClient(tmp_path / 'bot.sqlite')
     client.init_db()
@@ -132,6 +183,10 @@ async def test_handle_text_chat_treats_reply_to_unknown_message_as_fresh_prompt(
     sent_messages = fake_llm.achat.await_args.kwargs['messages']
     assert [message.role for message in sent_messages] == [MessageRole.SYSTEM, MessageRole.USER]
     assert sent_messages[-1].content == 'fresh despite reply'
+
+    user_record = await gpt_handlers.get_history_record(88, 5)
+    assert user_record is not None
+    assert user_record.reply_message_id is None
 
 
 @pytest.mark.asyncio

@@ -22,6 +22,7 @@ class SQLiteClient:
                 CREATE TABLE IF NOT EXISTS history (
                     chat_id INTEGER NOT NULL,
                     message_id INTEGER NOT NULL,
+                    canonical_message_id INTEGER NOT NULL,
                     text TEXT NOT NULL,
                     reply_chat_id INTEGER,
                     reply_message_id INTEGER,
@@ -36,6 +37,13 @@ class SQLiteClient:
                     feature TEXT NOT NULL,
                     PRIMARY KEY (user_id, feature)
                 );
+                '''
+            )
+            self._migrate_history_table(connection)
+            connection.execute(
+                '''
+                CREATE INDEX IF NOT EXISTS idx_history_chat_canonical_message_id
+                ON history (chat_id, canonical_message_id)
                 '''
             )
 
@@ -103,17 +111,19 @@ class SQLiteClient:
                 INSERT OR REPLACE INTO history (
                     chat_id,
                     message_id,
+                    canonical_message_id,
                     text,
                     reply_chat_id,
                     reply_message_id,
                     role,
                     is_llm_chain,
                     schema_version
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''',
                 (
                     record['chat_id'],
                     record['message_id'],
+                    record.get('canonical_message_id') or record['message_id'],
                     record['text'],
                     record.get('reply_chat_id'),
                     record.get('reply_message_id'),
@@ -130,6 +140,7 @@ class SQLiteClient:
                 SELECT
                     chat_id,
                     message_id,
+                    canonical_message_id,
                     text,
                     reply_chat_id,
                     reply_message_id,
@@ -142,6 +153,54 @@ class SQLiteClient:
                 (chat_id, message_id),
             ).fetchone()
         return dict(row) if row else None
+
+    def get_canonical_history_record(self, chat_id: int, message_id: int) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            canonical_row = connection.execute(
+                '''
+                SELECT canonical_message_id
+                FROM history
+                WHERE chat_id = ? AND message_id = ?
+                ''',
+                (chat_id, message_id),
+            ).fetchone()
+            if canonical_row is None:
+                return None
+            row = connection.execute(
+                '''
+                SELECT
+                    chat_id,
+                    message_id,
+                    canonical_message_id,
+                    text,
+                    reply_chat_id,
+                    reply_message_id,
+                    role,
+                    is_llm_chain,
+                    schema_version
+                FROM history
+                WHERE chat_id = ? AND message_id = ?
+                ''',
+                (chat_id, canonical_row['canonical_message_id']),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def _migrate_history_table(self, connection: sqlite3.Connection) -> None:
+        columns = {
+            row['name']
+            for row in connection.execute('PRAGMA table_info(history)').fetchall()
+        }
+        if 'canonical_message_id' not in columns:
+            connection.execute(
+                'ALTER TABLE history ADD COLUMN canonical_message_id INTEGER'
+            )
+        connection.execute(
+            '''
+            UPDATE history
+            SET canonical_message_id = message_id
+            WHERE canonical_message_id IS NULL
+            '''
+        )
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.db_path)
