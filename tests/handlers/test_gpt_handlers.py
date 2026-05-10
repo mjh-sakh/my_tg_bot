@@ -45,7 +45,7 @@ async def test_handle_text_chat_sends_fresh_prompt_and_records_history(tmp_path,
     monkeypatch.setattr(gpt_handlers, 'now', Clock([0.0, 2.0, 2.0]))
 
     fake_llm = FakeLLM(chunks=['assistant reply'])
-    monkeypatch.setattr(gpt_handlers, 'llm', lambda: fake_llm)
+    monkeypatch.setattr(gpt_handlers, 'llm', lambda **kwargs: fake_llm)
 
     update = make_update(chat_id=55, message_id=11, text='hello there')
 
@@ -99,7 +99,7 @@ async def test_handle_text_chat_rebuilds_reply_chain_from_stored_history(tmp_pat
     )
 
     fake_llm = FakeLLM(chunks=['assistant reply'])
-    monkeypatch.setattr(gpt_handlers, 'llm', lambda: fake_llm)
+    monkeypatch.setattr(gpt_handlers, 'llm', lambda **kwargs: fake_llm)
 
     update = make_update(
         chat_id=77,
@@ -144,7 +144,7 @@ async def test_handle_text_chat_resolves_reply_to_alias_backed_message(tmp_path,
     )
 
     fake_llm = FakeLLM(chunks=['assistant reply'])
-    monkeypatch.setattr(gpt_handlers, 'llm', lambda: fake_llm)
+    monkeypatch.setattr(gpt_handlers, 'llm', lambda **kwargs: fake_llm)
 
     update = make_update(
         chat_id=77,
@@ -175,7 +175,7 @@ async def test_handle_text_chat_treats_reply_to_unknown_message_as_fresh_prompt(
     monkeypatch.setattr(gpt_handlers, 'now', Clock([0.0, 2.0, 2.0]))
 
     fake_llm = FakeLLM(chunks=['assistant reply'])
-    monkeypatch.setattr(gpt_handlers, 'llm', lambda: fake_llm)
+    monkeypatch.setattr(gpt_handlers, 'llm', lambda **kwargs: fake_llm)
 
     update = make_update(
         chat_id=88,
@@ -220,7 +220,7 @@ async def test_handle_text_chat_chunks_long_streamed_reply_into_one_canonical_ro
 
     long_reply = 'a' * 9000
     fake_llm = FakeLLM(chunks=[long_reply])
-    monkeypatch.setattr(gpt_handlers, 'llm', lambda: fake_llm)
+    monkeypatch.setattr(gpt_handlers, 'llm', lambda **kwargs: fake_llm)
 
     update = make_update(chat_id=55, message_id=11, text='hello there')
 
@@ -266,7 +266,7 @@ async def test_handle_text_chat_reply_to_later_assistant_chunk_uses_canonical_as
     first_reply = 'b' * 9000
     second_reply = 'follow-up reply'
     fake_llm = FakeLLM(chunks=[first_reply], extra_streams=[[second_reply]])
-    monkeypatch.setattr(gpt_handlers, 'llm', lambda: fake_llm)
+    monkeypatch.setattr(gpt_handlers, 'llm', lambda **kwargs: fake_llm)
     monkeypatch.setattr(gpt_handlers, 'now', Clock([0.0, 2.0, 2.0, 2.0, 10.0, 12.0, 12.0]))
 
     initial_update = make_update(chat_id=55, message_id=11, text='hello there')
@@ -294,10 +294,46 @@ async def test_handle_text_chat_reply_to_later_assistant_chunk_uses_canonical_as
 
 
 @pytest.mark.asyncio
+async def test_handle_text_chat_uses_different_grok_headers_for_different_root_threads(
+    tmp_path,
+    monkeypatch,
+):
+    client = SQLiteClient(tmp_path / 'bot.sqlite')
+    client.init_db()
+    monkeypatch.setattr(gpt_handlers, 'SQLiteClient', lambda: client)
+    monkeypatch.setattr(gpt_handlers, 'DEFAULT_MODEL', 'x-ai/grok-3-mini')
+    monkeypatch.setattr(gpt_handlers, 'now', Clock([0.0, 2.0, 2.0, 10.0, 12.0, 12.0]))
+
+    llm_factory = FakeLLMFactory(['first reply'], ['second reply'])
+    monkeypatch.setattr(gpt_handlers, 'llm', llm_factory)
+
+    await gpt_handlers.handle_text_chat(make_update(chat_id=55, message_id=11, text='first root'), object())
+    await gpt_handlers.handle_text_chat(make_update(chat_id=55, message_id=30, text='second root'), object())
+
+    assert llm_factory.calls[0]['default_headers'] != llm_factory.calls[1]['default_headers']
+
+
+@pytest.mark.asyncio
+async def test_handle_text_chat_skips_grok_header_for_non_grok_models(tmp_path, monkeypatch):
+    client = SQLiteClient(tmp_path / 'bot.sqlite')
+    client.init_db()
+    monkeypatch.setattr(gpt_handlers, 'SQLiteClient', lambda: client)
+    monkeypatch.setattr(gpt_handlers, 'DEFAULT_MODEL', 'openai/gpt-4o-mini')
+    monkeypatch.setattr(gpt_handlers, 'now', Clock([0.0, 2.0, 2.0]))
+
+    llm_factory = FakeLLMFactory(['assistant reply'])
+    monkeypatch.setattr(gpt_handlers, 'llm', llm_factory)
+
+    await gpt_handlers.handle_text_chat(make_update(chat_id=55, message_id=11, text='hello there'), object())
+
+    assert llm_factory.calls == [{'model': 'openai/gpt-4o-mini'}]
+
+
+@pytest.mark.asyncio
 async def test_streaming_updates_placeholder_then_final_reply_with_full_rerender(monkeypatch):
     update = make_update(chat_id=99, message_id=7, text='hello')
     fake_llm = FakeLLM(chunks=['**Hello**', ' world'])
-    monkeypatch.setattr(gpt_handlers, 'llm', lambda: fake_llm)
+    monkeypatch.setattr(gpt_handlers, 'llm', lambda **kwargs: fake_llm)
     monkeypatch.setattr(gpt_handlers, 'now', Clock([0.0, 1.4, 1.4, 2.6, 2.6]))
     write_history_record = AsyncMock()
     monkeypatch.setattr(gpt_handlers, 'write_history_record', write_history_record)
@@ -328,7 +364,7 @@ async def test_streaming_updates_placeholder_then_final_reply_with_full_rerender
 async def test_streaming_failure_replaces_active_chunk_with_error_and_skips_persistence(monkeypatch):
     update = make_update(chat_id=99, message_id=7, text='hello')
     fake_llm = FakeLLM(chunks=['partial'], error_after=1)
-    monkeypatch.setattr(gpt_handlers, 'llm', lambda: fake_llm)
+    monkeypatch.setattr(gpt_handlers, 'llm', lambda **kwargs: fake_llm)
     monkeypatch.setattr(gpt_handlers, 'now', Clock([0.0, 2.0, 2.0]))
     write_history_record = AsyncMock()
     monkeypatch.setattr(gpt_handlers, 'write_history_record', write_history_record)
@@ -353,7 +389,7 @@ async def test_streaming_failure_replaces_active_chunk_with_error_and_skips_pers
 async def test_empty_stream_replaces_placeholder_with_error_and_skips_persistence(monkeypatch):
     update = make_update(chat_id=99, message_id=7, text='hello')
     fake_llm = FakeLLM(chunks=[])
-    monkeypatch.setattr(gpt_handlers, 'llm', lambda: fake_llm)
+    monkeypatch.setattr(gpt_handlers, 'llm', lambda **kwargs: fake_llm)
     monkeypatch.setattr(gpt_handlers, 'now', Clock([0.0]))
     write_history_record = AsyncMock()
     monkeypatch.setattr(gpt_handlers, 'write_history_record', write_history_record)
@@ -446,6 +482,16 @@ class FakeLLM:
             if self.error_after is not None and emitted >= self.error_after:
                 raise RuntimeError('boom')
         yield SimpleNamespace(delta='', raw={'usage': {'total_tokens': 1}})
+
+
+class FakeLLMFactory:
+    def __init__(self, *streams):
+        self.streams = [list(stream) for stream in streams]
+        self.calls = []
+
+    def __call__(self, **kwargs):
+        self.calls.append(kwargs)
+        return FakeLLM(chunks=self.streams.pop(0))
 
 
 def make_update(chat_id: int, message_id: int, text: str, reply_to_message=None):

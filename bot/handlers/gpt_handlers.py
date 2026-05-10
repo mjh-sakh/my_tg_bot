@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Optional
 
@@ -50,6 +51,41 @@ def llm(model: str = DEFAULT_MODEL, **kwargs) -> OpenAILike:
         model=model,
     ) | kwargs
     return OpenRouter(**params)
+
+
+def is_grok_model(model: str) -> bool:
+    normalized_model = model.strip().lower()
+    return normalized_model.startswith('x-ai/grok') or normalized_model.startswith('grok')
+
+
+def get_root_thread_message_id(
+    *,
+    chain: list[HistoryRecord],
+    parent_message_id: int,
+) -> int:
+    if chain:
+        return chain[0].message_id
+    return parent_message_id
+
+
+def build_grok_conv_id(*, chat_id: int, root_message_id: int) -> str:
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f'tg://chat/{chat_id}/root/{root_message_id}'))
+
+
+def build_grok_default_headers(
+    *,
+    model: str,
+    chat_id: int,
+    root_message_id: int,
+) -> dict[str, str]:
+    if not is_grok_model(model):
+        return {}
+    return {
+        'x-grok-conv-id': build_grok_conv_id(
+            chat_id=chat_id,
+            root_message_id=root_message_id,
+        )
+    }
 
 
 def now() -> float:
@@ -276,8 +312,22 @@ async def generate_llm_reply(
     chain: list[HistoryRecord],
     parent_chat_id: int,
     parent_message_id: int,
+    model: Optional[str] = None,
 ) -> None:
-    llm_ = llm()
+    model = model or DEFAULT_MODEL
+    root_message_id = get_root_thread_message_id(
+        chain=chain,
+        parent_message_id=parent_message_id,
+    )
+    default_headers = build_grok_default_headers(
+        model=model,
+        chat_id=message.chat_id,
+        root_message_id=root_message_id,
+    )
+    llm_kwargs = {'model': model}
+    if default_headers:
+        llm_kwargs['default_headers'] = default_headers
+    llm_ = llm(**llm_kwargs)
     messages = build_llm_messages(text, chain)
     reply_messages = [await _safe_reply_text(message, markdown_to_telegram_html(STREAM_IN_PROGRESS_SUFFIX.strip()))]
     last_sent_chunks: list[Optional[str]] = [STREAM_IN_PROGRESS_SUFFIX.strip()]
