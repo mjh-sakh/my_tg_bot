@@ -6,10 +6,18 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
 jobs:
   test:
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -21,6 +29,8 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
 
       - name: Install dependencies
         run: uv sync --frozen --dev
@@ -30,9 +40,9 @@ jobs:
 
   deploy:
     name: Signal VPS deploy
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: test
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - name: Configure SSH
         env:
