@@ -1,0 +1,3 @@
+cicd ALL=(root) NOPASSWD: /usr/bin/systemctl start my-tg-bot-deploy.service
+cicd ALL=(root) NOPASSWD: /usr/bin/systemctl status --no-pager my-tg-bot-deploy.service
+cicd ALL=(root) NOPASSWD: /usr/bin/systemctl status --no-pager my-tg-bot.service

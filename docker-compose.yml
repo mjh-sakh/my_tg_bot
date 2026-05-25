@@ -3,9 +3,16 @@ services:
     build:
       context: .
       target: runtime
-    image: my-tg-bot:latest
+    image: ${MY_TG_BOT_IMAGE:-my-tg-bot:latest}
+    user: "${MY_TG_BOT_UID:-1000}:${MY_TG_BOT_GID:-1000}"
     restart: unless-stopped
     env_file:
-      - .env
+      - ${MY_TG_BOT_ENV_FILE:-.env}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp
     volumes:
-      - /opt/my_tg_bot/data:/app/data
+      - ${MY_TG_BOT_DATA_DIR:-./data}:/app/data

@@ -1,0 +1,11 @@
+[Unit]
+Description=Deploy My Telegram Bot from GitHub main
+Requires=docker.service
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/sbin/deploy-my-tg-bot
+TimeoutStartSec=900

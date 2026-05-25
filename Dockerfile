@@ -14,7 +14,9 @@ LABEL authors="mjh-ao"
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:$PATH" \
-    PYTHONPATH="/app"
+    PYTHONPATH="/app" \
+    HOME="/tmp" \
+    XDG_CACHE_HOME="/tmp/.cache"
 
 WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv

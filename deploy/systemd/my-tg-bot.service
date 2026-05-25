@@ -1,0 +1,23 @@
+[Unit]
+Description=My Telegram Bot Docker Compose stack
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/srv/my_tg_bot/app
+Environment=COMPOSE_PROJECT_NAME=my_tg_bot
+Environment=MY_TG_BOT_IMAGE=my-tg-bot:latest
+Environment=MY_TG_BOT_ENV_FILE=/etc/my_tg_bot/my_tg_bot.env
+Environment=MY_TG_BOT_DATA_DIR=/var/lib/my_tg_bot/data
+Environment=MY_TG_BOT_UID=101
+Environment=MY_TG_BOT_GID=104
+ExecStart=/usr/bin/docker compose up -d --build --remove-orphans
+ExecStop=/usr/bin/docker compose down
+TimeoutStartSec=900
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

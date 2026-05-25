@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_URL="git@github.com:mjh-sakh/my_tg_bot.git"
+BRANCH="main"
+APP_DIR="/srv/my_tg_bot/app"
+DATA_DIR="/var/lib/my_tg_bot/data"
+ENV_FILE="/etc/my_tg_bot/my_tg_bot.env"
+DEPLOY_KEY="/etc/ssh/deploy-keys/tg-bot_github"
+KNOWN_HOSTS="/etc/ssh/ssh_known_hosts"
+SERVICE="my-tg-bot.service"
+
+log() {
+  printf '[deploy-my-tg-bot] %s\n' "$*"
+}
+
+fail() {
+  printf '[deploy-my-tg-bot] ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
+require_file() {
+  local path="$1"
+  local description="$2"
+  [[ -f "$path" ]] || fail "missing ${description}: ${path}"
+}
+
+require_dir() {
+  local path="$1"
+  local description="$2"
+  [[ -d "$path" ]] || fail "missing ${description}: ${path}"
+}
+
+[[ "$(id -u)" -eq 0 ]] || fail "must run as root"
+
+require_file "$ENV_FILE" "environment file"
+require_file "$DEPLOY_KEY" "GitHub deploy key"
+require_file "$KNOWN_HOSTS" "SSH known_hosts file"
+ssh-keygen -F github.com -f "$KNOWN_HOSTS" >/dev/null || fail "github.com is missing from ${KNOWN_HOSTS}"
+
+install -d -m 755 -o root -g root /srv/my_tg_bot
+install -d -m 755 -o root -g root "$APP_DIR"
+install -d -m 750 -o tg-bot -g tg-bot "$DATA_DIR"
+install -d -m 700 -o root -g root /etc/my_tg_bot
+install -d -m 700 -o root -g root /etc/ssh/deploy-keys
+
+export GIT_SSH_COMMAND="ssh -i ${DEPLOY_KEY} -o IdentitiesOnly=yes -o UserKnownHostsFile=${KNOWN_HOSTS} -o StrictHostKeyChecking=yes"
+
+if [[ ! -d "${APP_DIR}/.git" ]]; then
+  if find "$APP_DIR" -mindepth 1 -maxdepth 1 | read -r _; then
+    fail "${APP_DIR} is not empty and is not a git checkout; move it aside before deploying"
+  fi
+
+  log "cloning ${REPO_URL} (${BRANCH}) into ${APP_DIR}"
+  git clone --branch "$BRANCH" --single-branch "$REPO_URL" "$APP_DIR"
+fi
+
+require_dir "${APP_DIR}/.git" "git checkout"
+cd "$APP_DIR"
+
+current_remote="$(git remote get-url origin)"
+[[ "$current_remote" == "$REPO_URL" ]] || fail "unexpected origin remote: ${current_remote}"
+
+actual_top="$(git rev-parse --show-toplevel)"
+[[ "$actual_top" == "$APP_DIR" ]] || fail "unexpected git top-level: ${actual_top}"
+
+log "fetching ${BRANCH}"
+git fetch origin "$BRANCH"
+
+log "resetting to origin/${BRANCH}"
+git reset --hard "origin/${BRANCH}"
+
+log "cleaning checkout"
+git clean -fdx
+
+log "ensuring data permissions"
+chown -R tg-bot:tg-bot "$DATA_DIR"
+chmod 750 "$DATA_DIR"
+if [[ -f "${DATA_DIR}/bot.sqlite" ]]; then
+  chmod 640 "${DATA_DIR}/bot.sqlite"
+fi
+
+log "restarting ${SERVICE}"
+/usr/bin/systemctl restart "$SERVICE"
+
+log "done"

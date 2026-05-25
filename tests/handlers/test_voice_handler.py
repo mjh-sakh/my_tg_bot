@@ -102,7 +102,7 @@ async def test_handle_voice_stores_canonical_and_alias_history_and_generates_ass
     monkeypatch.setattr(gpt_handlers, 'SQLiteClient', lambda: client)
     monkeypatch.setattr(voice_handler, 'find_role', AsyncMock(return_value=Role.user))
     monkeypatch.setattr(voice_handler, 'has_feature', AsyncMock(return_value=True))
-    monkeypatch.setattr(gpt_handlers, 'llm', lambda: FakeLLM('assistant reply'))
+    monkeypatch.setattr(gpt_handlers, 'llm', lambda **kwargs: FakeLLM('assistant reply'))
     monkeypatch.setattr(gpt_handlers, 'now', Clock([0.0, 2.0, 2.0]))
 
     file_handle = SimpleNamespace(download_to_memory=AsyncMock(side_effect=lambda buffer: buffer.write(b'audio')))
@@ -151,7 +151,7 @@ async def test_handle_voice_stores_all_transcript_chunks_and_reply_to_last_chunk
     monkeypatch.setattr(voice_handler, 'has_feature', AsyncMock(return_value=True))
 
     fake_llm = FakeLLM('assistant reply')
-    monkeypatch.setattr(gpt_handlers, 'llm', lambda: fake_llm)
+    monkeypatch.setattr(gpt_handlers, 'llm', lambda **kwargs: fake_llm)
     monkeypatch.setattr(gpt_handlers, 'now', Clock([0.0, 2.0, 2.0]))
 
     transcript = 'x' * 9000
@@ -202,7 +202,7 @@ async def test_handle_voice_skips_ai_chat_for_forwarded_messages(tmp_path, monke
     client.init_db()
     monkeypatch.setattr(gpt_handlers, 'SQLiteClient', lambda: client)
     fake_llm = FakeLLM('assistant reply')
-    monkeypatch.setattr(gpt_handlers, 'llm', lambda: fake_llm)
+    monkeypatch.setattr(gpt_handlers, 'llm', lambda **kwargs: fake_llm)
 
     file_handle = SimpleNamespace(download_to_memory=AsyncMock(side_effect=lambda buffer: buffer.write(b'audio')))
     bot = SimpleNamespace(get_file=AsyncMock(return_value=file_handle))
@@ -255,7 +255,7 @@ async def test_reply_to_transcript_alias_continues_same_canonical_chain(tmp_path
     )
 
     fake_llm = FakeLLM('voice follow-up reply')
-    monkeypatch.setattr(gpt_handlers, 'llm', lambda: fake_llm)
+    monkeypatch.setattr(gpt_handlers, 'llm', lambda **kwargs: fake_llm)
     monkeypatch.setattr(gpt_handlers, 'now', Clock([0.0, 2.0, 2.0]))
     monkeypatch.setattr(voice_handler, 'find_role', AsyncMock(return_value=Role.user))
     monkeypatch.setattr(voice_handler, 'has_feature', AsyncMock(return_value=True))
