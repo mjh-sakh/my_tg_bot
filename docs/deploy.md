@@ -73,7 +73,7 @@ The workflow runs tests, then SSHes as `cicd` and runs only:
 
 ```bash
 sudo -n /usr/bin/systemctl start my-tg-bot-deploy.service
-sudo -n /usr/bin/systemctl status --no-pager my-tg-bot-deploy.service
+sudo -n /usr/bin/systemctl show my-tg-bot-deploy.service -p ActiveState -p Result -p ExecMainStatus --no-pager
 ```
 
 `cicd` should not be able to read production secrets or modify production files directly.
@@ -160,7 +160,10 @@ Start the deploy service:
 
 ```bash
 sudo -n /usr/bin/systemctl start my-tg-bot-deploy.service
+sudo -n /usr/bin/systemctl show my-tg-bot-deploy.service -p ActiveState -p Result -p ExecMainStatus --no-pager
 ```
+
+A successful one-shot deploy unit returns to `inactive (dead)`, so `systemctl status` may return exit code `3` even when deployment succeeded. Use `systemctl show` for non-failing status output in CI; the `start` command is the command that should fail the deployment if the service fails.
 
 ## Direct manual replacement deployment
 

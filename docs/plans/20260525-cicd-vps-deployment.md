@@ -43,6 +43,8 @@ Completed on 2026-05-26:
 - [x] validated `cicd` limited sudo access and confirmed `cicd` cannot read `/etc/my_tg_bot/my_tg_bot.env`.
 - [x] stopped legacy `/opt/my_tg_bot` Compose stack and started the new `/srv/my_tg_bot/app` stack through manual replacement deployment.
 - [x] validated the running container uses UID `101`, GID `104`, and `/var/lib/my_tg_bot/data` contains `bot.sqlite`.
+- [x] pushed initial CI/CD commit and observed GitHub Actions deploy trigger; deploy service succeeded, but the workflow failed because `systemctl status` returns non-zero for a successful inactive one-shot unit.
+- [x] updated the workflow and docs so `systemctl start` is authoritative and status output uses `systemctl show` instead of `status || true`.
 - [x] ran local validation:
   - [x] `bash -n scripts/deploy.sh deploy/scripts/deploy-my-tg-bot`
   - [x] `docker compose config`
@@ -50,8 +52,7 @@ Completed on 2026-05-26:
 
 Remaining follow-up:
 
-- [ ] commit and push these repo changes to `main`; until then, `my-tg-bot-deploy.service` will reset the VPS checkout back to the previous `main` revision.
-- [ ] after pushing, trigger GitHub Actions or manually run `sudo -n /usr/bin/systemctl start my-tg-bot-deploy.service` to verify the pull-based release path end to end.
+- [ ] push the workflow status-handling fix to `main` and confirm the next GitHub Actions run is green.
 - [ ] manually verify Telegram bot behavior (`/start`, `/whoami`, chat, voice) after the pushed release deploy.
 
 ## Context
@@ -266,7 +267,7 @@ cd /srv/my_tg_bot/app && docker compose ps
 Validate GitHub Actions signaling:
 
 ```bash
-ssh cicd@<vps> 'sudo -n /usr/bin/systemctl start my-tg-bot-deploy.service && sudo -n /usr/bin/systemctl status --no-pager my-tg-bot-deploy.service'
+ssh cicd@<vps> 'sudo -n /usr/bin/systemctl start my-tg-bot-deploy.service && sudo -n /usr/bin/systemctl show my-tg-bot-deploy.service -p ActiveState -p Result -p ExecMainStatus --no-pager'
 ```
 
 Validate runtime behavior:
@@ -453,7 +454,7 @@ docker compose config
 ```bash
 ssh -p "${{ secrets.VPS_PORT }}" \
   "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
-  'sudo -n /usr/bin/systemctl start my-tg-bot-deploy.service && sudo -n /usr/bin/systemctl status --no-pager my-tg-bot-deploy.service'
+  'sudo -n /usr/bin/systemctl start my-tg-bot-deploy.service && sudo -n /usr/bin/systemctl show my-tg-bot-deploy.service -p ActiveState -p Result -p ExecMainStatus --no-pager'
 ```
 
 - [ ] keep production secrets out of GitHub Actions; do not add Telegram/API tokens to repo secrets.

@@ -58,4 +58,4 @@ jobs:
             -o IdentitiesOnly=yes \
             -o BatchMode=yes \
             "$VPS_USER@$VPS_HOST" \
-            'sudo -n /usr/bin/systemctl start my-tg-bot-deploy.service && sudo -n /usr/bin/systemctl status --no-pager my-tg-bot-deploy.service'
+            'sudo -n /usr/bin/systemctl start my-tg-bot-deploy.service && sudo -n /usr/bin/systemctl show my-tg-bot-deploy.service -p ActiveState -p Result -p ExecMainStatus --no-pager'
