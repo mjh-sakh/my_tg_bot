@@ -16,6 +16,8 @@ Direct local deployment is still available as a root/admin operation, but it is 
 - one Docker Compose service: `bot`
 - one active Compose project for the production token: `my_tg_bot`
 - persistent SQLite file in the container: `/app/data/bot.sqlite`
+- locker HTTP API in the bot container: `GET /locker/auth`, `POST /locker/logs`
+- Docker port publish: host `8080` to container `8080`
 - production host data directory: `/var/lib/my_tg_bot/data`
 - production env file: `/etc/my_tg_bot/my_tg_bot.env`
 - production app checkout: `/srv/my_tg_bot/app`
@@ -61,6 +63,8 @@ Production application secrets are **not** stored in GitHub Actions. They live o
 ```
 
 Required values include at least the variables shown in `.env.example`, such as Telegram/API tokens, admin ID, model settings, and message limits.
+
+The locker HTTP API listens on container port `8080`, and Docker publishes it on host port `8080`. The API is unauthenticated plain HTTP. Expose the published port only where that risk is acceptable, or restrict it with firewall/reverse-proxy rules.
 
 ## CI/CD production deployment
 
@@ -246,9 +250,24 @@ Manual bot checks:
 
 - `/start`
 - `/whoami`
+- `/locker`, `/locker on`, `/locker off`
 - one `/chat` request if credentials are ready
 - one voice message if credentials are ready
 - restart/recreate the container and confirm `/var/lib/my_tg_bot/data/bot.sqlite` remains present
+
+Locker HTTP checks:
+
+```bash
+curl -i http://<host>:8080/locker/auth
+curl -i -X POST --data-binary $'{"event":"test"}\n' http://<host>:8080/locker/logs
+```
+
+Use these Windows build URLs:
+
+```text
+AuthURL=http://<host>:8080/locker/auth
+LogURL=http://<host>:8080/locker/logs
+```
 
 ## Rollback to legacy deployment
 
