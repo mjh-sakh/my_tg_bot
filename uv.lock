@@ -795,6 +795,7 @@ name = "my-tg-bot"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "aiohttp" },
     { name = "httpx" },
     { name = "llama-index" },
     { name = "llama-index-llms-openrouter" },
@@ -812,6 +813,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aiohttp", specifier = ">=3.13.5" },
     { name = "httpx" },
     { name = "llama-index" },
     { name = "llama-index-llms-openrouter" },

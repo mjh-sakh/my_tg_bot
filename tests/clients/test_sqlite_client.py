@@ -22,6 +22,7 @@ def test_init_db_creates_parent_directory_and_tables(tmp_path):
     assert 'users' in tables
     assert 'history' in tables
     assert 'user_features' in tables
+    assert 'bot_settings' in tables
 
 
 def test_init_db_does_not_create_is_llm_chain_column_on_fresh_db(tmp_path):
@@ -118,6 +119,34 @@ def test_list_features_returns_sorted_features(tmp_path):
     client.enable_feature(123, 'chat')
 
     assert client.list_features(123) == ['chat', 'voice']
+
+
+def test_get_locker_restricted_defaults_to_false(tmp_path):
+    client = SQLiteClient(tmp_path / 'bot.sqlite')
+    client.init_db()
+
+    assert client.get_locker_restricted() is False
+
+
+def test_set_locker_restricted_round_trip(tmp_path):
+    client = SQLiteClient(tmp_path / 'bot.sqlite')
+    client.init_db()
+
+    client.set_locker_restricted(True)
+    assert client.get_locker_restricted() is True
+
+    client.set_locker_restricted(False)
+    assert client.get_locker_restricted() is False
+
+
+def test_locker_restricted_persists_across_clients(tmp_path):
+    db_path = tmp_path / 'bot.sqlite'
+    client = SQLiteClient(db_path)
+    client.init_db()
+
+    client.set_locker_restricted(True)
+
+    assert SQLiteClient(db_path).get_locker_restricted() is True
 
 
 def test_insert_and_get_history_record_round_trip(tmp_path):

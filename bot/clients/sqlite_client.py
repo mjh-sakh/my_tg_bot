@@ -36,6 +36,11 @@ class SQLiteClient:
                     feature TEXT NOT NULL,
                     PRIMARY KEY (user_id, feature)
                 );
+
+                CREATE TABLE IF NOT EXISTS bot_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
                 '''
             )
             self._migrate_history_table(connection)
@@ -102,6 +107,25 @@ class SQLiteClient:
                 (user_id,),
             ).fetchall()
         return [row['feature'] for row in rows]
+
+    def get_locker_restricted(self) -> bool:
+        with self._connect() as connection:
+            row = connection.execute(
+                'SELECT value FROM bot_settings WHERE key = ?',
+                ('locker_restricted',),
+            ).fetchone()
+        return row is not None and row['value'] == '1'
+
+    def set_locker_restricted(self, restricted: bool) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                '''
+                INSERT INTO bot_settings (key, value)
+                VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                ''',
+                ('locker_restricted', '1' if restricted else '0'),
+            )
 
     def insert_history_record(self, **record: Any) -> None:
         with self._connect() as connection:
