@@ -17,7 +17,7 @@ Direct local deployment is still available as a root/admin operation, but it is 
 - one active Compose project for the production token: `my_tg_bot`
 - persistent SQLite file in the container: `/app/data/bot.sqlite`
 - locker HTTP API in the bot container: `GET /locker/auth`, `POST /locker/logs`
-- Docker port publish: host `8080` to container `8080`
+- Docker port publish: host `127.0.0.1:8080` to container `8080`
 - production host data directory: `/var/lib/my_tg_bot/data`
 - production env file: `/etc/my_tg_bot/my_tg_bot.env`
 - production app checkout: `/srv/my_tg_bot/app`
@@ -64,7 +64,7 @@ Production application secrets are **not** stored in GitHub Actions. They live o
 
 Required values include at least the variables shown in `.env.example`, such as Telegram/API tokens, admin ID, model settings, and message limits.
 
-The locker HTTP API listens on container port `8080`, and Docker publishes it on host port `8080`. The API is unauthenticated plain HTTP. Expose the published port only where that risk is acceptable, or restrict it with firewall/reverse-proxy rules.
+The locker HTTP API listens on container port `8080`, and Docker publishes it on host loopback only at `127.0.0.1:8080`. Public access should go through nginx exact-match proxy locations for `/locker/auth` and `/locker/logs`. The API is unauthenticated plain HTTP. Expose it only where that risk is acceptable.
 
 ## CI/CD production deployment
 
@@ -258,15 +258,17 @@ Manual bot checks:
 Locker HTTP checks:
 
 ```bash
-curl -i http://<host>:8080/locker/auth
-curl -i -X POST --data-binary $'{"event":"test"}\n' http://<host>:8080/locker/logs
+curl -i http://127.0.0.1:8080/locker/auth
+curl -i -X POST --data-binary $'{"event":"test"}\n' http://127.0.0.1:8080/locker/logs
+curl -i http://<host>/locker/auth
+curl -i -X POST --data-binary $'{"event":"test"}\n' http://<host>/locker/logs
 ```
 
 Use these Windows build URLs:
 
 ```text
-AuthURL=http://<host>:8080/locker/auth
-LogURL=http://<host>:8080/locker/logs
+AuthURL=http://<host>/locker/auth
+LogURL=http://<host>/locker/logs
 ```
 
 ## Rollback to legacy deployment
