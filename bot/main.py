@@ -7,6 +7,7 @@ from aiohttp import web
 from telegram.ext import Application
 
 logging.basicConfig(level=logging.INFO)
+logging.getLogger('httpx').setLevel(logging.WARNING)
 LOGGER = logging.getLogger(__name__)
 
 from bot.clients import AdaptiveTranscribeClient, SQLiteClient
@@ -27,8 +28,23 @@ from bot.handlers import (
 from bot.locker_http import create_locker_http_app
 
 
+TELEGRAM_API_TIMEOUT_SECONDS = 30
+
+
 def build_application() -> Application:
-    application = Application.builder().token(os.getenv('TELEGRAM_TOKEN')).build()
+    application = (
+        Application.builder()
+        .token(os.getenv('TELEGRAM_TOKEN'))
+        .connect_timeout(TELEGRAM_API_TIMEOUT_SECONDS)
+        .read_timeout(TELEGRAM_API_TIMEOUT_SECONDS)
+        .write_timeout(TELEGRAM_API_TIMEOUT_SECONDS)
+        .pool_timeout(TELEGRAM_API_TIMEOUT_SECONDS)
+        .get_updates_connect_timeout(TELEGRAM_API_TIMEOUT_SECONDS)
+        .get_updates_read_timeout(TELEGRAM_API_TIMEOUT_SECONDS)
+        .get_updates_write_timeout(TELEGRAM_API_TIMEOUT_SECONDS)
+        .get_updates_pool_timeout(TELEGRAM_API_TIMEOUT_SECONDS)
+        .build()
+    )
     application.add_handler(start_handler)
     application.add_handler(whoami_handler)
 
