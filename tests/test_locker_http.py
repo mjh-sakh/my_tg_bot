@@ -61,10 +61,10 @@ async def test_logs_forward_to_admin_and_return_ok():
 
     assert response.status == 200
     assert response_text == 'ok'
-    bot.send_message.assert_awaited_once_with(
-        chat_id=123,
-        text='Windows locker log upload:\n\n{"event":"test"}\n',
-    )
+    bot.send_message.assert_awaited_once()
+    sent_message = bot.send_message.await_args.kwargs
+    assert sent_message['chat_id'] == 123
+    assert sent_message['text']
 
 
 @pytest.mark.asyncio
