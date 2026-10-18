@@ -46,7 +46,7 @@ class HistoryRecord(BaseModel):
 def llm(model: str = DEFAULT_MODEL, **kwargs) -> OpenAILike:
     params = dict(
         api_key=os.getenv('OPENROUTER_KEY'),
-        max_tokens=256,
+        max_tokens=int(os.getenv('MAX_OUTPUT_TOKENS', '128000')),
         context_window=4096,
         model=model,
     ) | kwargs

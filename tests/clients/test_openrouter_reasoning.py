@@ -46,3 +46,16 @@ def test_reasoning_effort_preserves_other_options(monkeypatch):
     }
     assert payload['seed'] == 42
     assert options['extra_body']['reasoning'] == {'exclude': True}
+
+
+@pytest.mark.parametrize('budget', [None, '16384', '128000'])
+def test_output_budget_includes_room_for_reasoning(monkeypatch, budget):
+    monkeypatch.setenv('OPENROUTER_KEY', 'test-key')
+    if budget is None:
+        monkeypatch.delenv('MAX_OUTPUT_TOKENS', raising=False)
+    else:
+        monkeypatch.setenv('MAX_OUTPUT_TOKENS', budget)
+
+    client = llm(model='openai/gpt-6-luna')
+
+    assert client._get_model_kwargs()['max_tokens'] == int(budget or '128000')

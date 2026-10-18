@@ -42,6 +42,10 @@ mise exec -- direnv exec . uv run python bot/main.py
 Set `REASONING_EFFORT` in `.env` to pass OpenRouter `reasoning.effort` to the
 assistant model (for example, `REASONING_EFFORT=low`). Leave it blank or unset to
 use the provider default. Supported values depend on the selected model.
+Set `MAX_OUTPUT_TOKENS` to control the output budget, including reasoning tokens
+(default: `128000`, the advertised output limit for `openai/gpt-6-luna`). This is
+a ceiling, not a target; actual token usage is billed. Lower it for models with a
+smaller output limit.
 Restart the bot after changing its environment.
 
 ## Test
