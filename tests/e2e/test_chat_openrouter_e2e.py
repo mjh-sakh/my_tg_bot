@@ -43,14 +43,17 @@ class SpyLLMFactory:
     os.getenv('RUN_OPENROUTER_E2E') != '1',
     reason='Set RUN_OPENROUTER_E2E=1 to run the real OpenRouter chat e2e test.',
 )
-async def test_real_grok_openrouter_branch_thread_reuses_same_affinity_header(tmp_path, monkeypatch):
+async def test_real_openrouter_branch_thread_preserves_context_and_model_headers(tmp_path, monkeypatch):
     openrouter_key = os.getenv('OPENROUTER_KEY')
     if not openrouter_key:
         pytest.skip('OPENROUTER_KEY is not configured.')
 
-    grok_model = os.getenv('OPENROUTER_GROK_MODEL') or os.getenv('DEFAULT_MODEL') or 'x-ai/grok-3-mini'
-    if not gpt_handlers.is_grok_model(grok_model):
-        pytest.skip(f'Configured e2e model is not a Grok model: {grok_model}')
+    model = (
+        os.getenv('OPENROUTER_E2E_MODEL')
+        or os.getenv('OPENROUTER_GROK_MODEL')
+        or os.getenv('DEFAULT_MODEL')
+        or 'x-ai/grok-3-mini'
+    )
 
     client = SQLiteClient(tmp_path / 'bot.sqlite')
     client.init_db()
@@ -60,7 +63,7 @@ async def test_real_grok_openrouter_branch_thread_reuses_same_affinity_header(tm
     monkeypatch.setattr(gpt_handlers, 'SQLiteClient', lambda: client)
     monkeypatch.setattr(security, 'SQLiteClient', lambda: client)
     monkeypatch.setattr(security, 'ADMIN_ID', 0)
-    monkeypatch.setattr(gpt_handlers, 'DEFAULT_MODEL', grok_model)
+    monkeypatch.setattr(gpt_handlers, 'DEFAULT_MODEL', model)
     monkeypatch.setattr(gpt_handlers, 'now', lambda: 10.0)
 
     real_llm = gpt_handlers.llm
@@ -105,14 +108,12 @@ async def test_real_grok_openrouter_branch_thread_reuses_same_affinity_header(tm
     )
     await wrapped(SimpleNamespace(message=branch_two_message, effective_user=SimpleNamespace(id=123456)), object())
 
-    expected_headers = {
-        'x-grok-conv-id': gpt_handlers.build_grok_conv_id(chat_id=999, root_message_id=100)
-    }
-    assert llm_factory.calls == [
-        {'model': grok_model, 'default_headers': expected_headers},
-        {'model': grok_model, 'default_headers': expected_headers},
-        {'model': grok_model, 'default_headers': expected_headers},
-    ]
+    expected_call = {'model': model}
+    if gpt_handlers.is_grok_model(model):
+        expected_call['default_headers'] = {
+            'x-grok-conv-id': gpt_handlers.build_grok_conv_id(chat_id=999, root_message_id=100)
+        }
+    assert llm_factory.calls == [expected_call] * 3
 
     assert [message.content for message in llm_factory.message_batches[1]] == [
         gpt_handlers.SYSTEM_PROMPT,

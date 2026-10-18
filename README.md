@@ -37,11 +37,27 @@ This repository no longer uses Node or `wrangler`.
 mise exec -- direnv exec . uv run python bot/main.py
 ```
 
+### Reasoning effort
+
+Set `REASONING_EFFORT` in `.env` to pass OpenRouter `reasoning.effort` to the
+assistant model (for example, `REASONING_EFFORT=low`). Leave it blank or unset to
+use the provider default. Supported values depend on the selected model.
+Restart the bot after changing its environment.
+
 ## Test
 
 ```bash
 mise exec -- direnv exec . uv run pytest
 ```
+
+The real OpenRouter chat test also makes paid API requests and is opt-in:
+
+```bash
+mise exec -- direnv exec . env RUN_OPENROUTER_E2E=1 uv run pytest tests/e2e/test_chat_openrouter_e2e.py -q
+```
+
+It uses `DEFAULT_MODEL` and `REASONING_EFFORT`; set `OPENROUTER_E2E_MODEL` to
+override the model for the test. `OPENROUTER_KEY` is required.
 
 The real Together STT test is skipped by default because it makes paid API requests.
 Opt in with `RUN_TOGETHER_E2E=1`; `TOGETHER_API_KEY` is required:

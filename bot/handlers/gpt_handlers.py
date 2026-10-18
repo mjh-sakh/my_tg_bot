@@ -50,6 +50,16 @@ def llm(model: str = DEFAULT_MODEL, **kwargs) -> OpenAILike:
         context_window=4096,
         model=model,
     ) | kwargs
+    reasoning_effort = os.getenv('REASONING_EFFORT', '').strip()
+    if reasoning_effort:
+        additional_kwargs = dict(params.get('additional_kwargs') or {})
+        extra_body = dict(additional_kwargs.get('extra_body') or {})
+        extra_body['reasoning'] = {
+            **extra_body.get('reasoning', {}),
+            'effort': reasoning_effort,
+        }
+        additional_kwargs['extra_body'] = extra_body
+        params['additional_kwargs'] = additional_kwargs
     return OpenRouter(**params)
 
 
