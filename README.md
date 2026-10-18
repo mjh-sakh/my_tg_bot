@@ -43,6 +43,16 @@ mise exec -- direnv exec . uv run python bot/main.py
 mise exec -- direnv exec . uv run pytest
 ```
 
+The real Together STT test is skipped by default because it makes paid API requests.
+Opt in with `RUN_TOGETHER_E2E=1`; `TOGETHER_API_KEY` is required:
+
+```bash
+mise exec -- direnv exec . env RUN_TOGETHER_E2E=1 uv run pytest tests/e2e/test_transcription_together_e2e.py -q
+```
+
+It transcribes a bundled synthetic English voice clip using the configured model
+(`TOGETHER_TRANSCRIBE_MODEL` overrides the default).
+
 ## Deployment
 
 Deployment instructions for the Netcup VPS are in `docs/deploy.md`.
